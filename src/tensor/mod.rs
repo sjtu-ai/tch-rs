@@ -131,6 +131,36 @@ impl Tensor {
     pub fn zero_pad2d(&self, left: i64, right: i64, top: i64, bottom: i64) -> Tensor {
         self.f_zero_pad2d(left, right, top, bottom).unwrap()
     }
+
+    pub fn f_zero_pad3d(
+        &self,
+        left: i64,
+        right: i64,
+        top: i64,
+        bottom: i64,
+        front: i64,
+        back: i64,
+    ) -> Result<Tensor, TchError> {
+        if self.dim() != 5 {
+            return Err(TchError::Shape(format!(
+                "expected a 5 dimension tensor, got {:?}",
+                self.size()
+            )));
+        }
+        self.f_constant_pad_nd(&[left, right, top, bottom, front, back])
+    }
+
+    pub fn zero_pad3d(
+        &self,
+        left: i64,
+        right: i64,
+        top: i64,
+        bottom: i64,
+        front: i64,
+        back: i64,
+    ) -> Tensor {
+        self.f_zero_pad3d(left, right, top, bottom, front, back).unwrap()
+    }
 }
 
 impl<T: crate::kind::Element> From<&[T]> for Tensor {
