@@ -680,6 +680,12 @@ impl<'a> Path<'a> {
     }
 }
 
+impl<'a> ToString for Path<'a> {
+    fn to_string(&self) -> String {
+        self.path.clone().join(&SEP.to_string())
+    }
+}
+
 impl<'a> Entry<'a> {
     /// Returns the existing entry if, otherwise create a new variable.
     ///
