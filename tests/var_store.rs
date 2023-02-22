@@ -1,6 +1,6 @@
 use std::fs;
 use tch::nn::OptimizerConfig;
-use tch::{nn::linear, nn::Init, nn::VarStore, Device, Kind, Tensor};
+use tch::{nn, nn::linear, nn::Init, nn::VarStore, Device, Kind, TchError, Tensor};
 
 #[test]
 fn path_components() {
@@ -88,7 +88,7 @@ fn save_to_stream_and_load_var_store() {
 #[test]
 fn save_and_load_from_stream_var_store() {
     let filename =
-        std::env::temp_dir().join(format!("tch-vs-load-stream-complete-{}", std::process::id()));
+        std::env::temp_dir().join(format!("tch-vs-load-stream-complete2-{}", std::process::id()));
     let add = |vs: &tch::nn::Path| {
         let v = vs.sub("a").sub("b").ones("t2", &[3]);
         let u = vs.zeros("t1", &[4]);
@@ -218,6 +218,7 @@ fn save_and_load_partial_var_store_incomplete_file() {
 
 #[test]
 fn init_test() {
+    tch::manual_seed(42);
     let vs = VarStore::new(Device::Cpu);
     let zeros = vs.root().zeros("t1", &[3]);
     assert_eq!(Vec::<f64>::from(&zeros), [0., 0., 0.]);
@@ -232,58 +233,74 @@ fn init_test() {
     let uniform = vs.root().var("t5", &[100], Init::Uniform { lo: 1.0, up: 2.0 });
     let uniform_min = f64::from(&uniform.min());
     let uniform_max = f64::from(&uniform.max());
-    assert!(uniform_min >= 1., "min {}", uniform_min);
-    assert!(uniform_max <= 2., "max {}", uniform_max);
+    assert!(uniform_min >= 1., "{}", "min {uniform_min}");
+    assert!(uniform_max <= 2., "{}", "max {uniform_max}");
     let uniform_std = f64::from(&uniform.std(true));
-    assert!(uniform_std > 0.15 && uniform_std < 0.35, "std {}", uniform_std);
+    assert!(uniform_std > 0.15 && uniform_std < 0.35, "{}", "std {uniform_std}");
     let normal = vs.root().var("normal", &[100], Init::Randn { mean: 0., stdev: 0.02 });
     let normal_std = f64::from(&normal.std(true));
-    assert!(normal_std <= 0.03, "std {}", normal_std);
+    assert!(normal_std <= 0.03, "{}", "std {normal_std}");
     let mut vs2 = VarStore::new(Device::Cpu);
     let ones = vs2.root().ones("t1", &[3]);
     assert_eq!(Vec::<f64>::from(&ones), [1., 1., 1.]);
     vs2.copy(&vs).unwrap();
     assert_eq!(Vec::<f64>::from(&ones), [0., 0., 0.]);
+    let ortho = vs.root().var("orthogonal", &[100, 100], Init::Orthogonal { gain: 2.0 });
+    let ortho_norm = f64::from(ortho.linalg_norm_ord_str("fro", None, true, Kind::Float));
+    assert!(
+        f64::abs(ortho_norm - 20.) < 1e-5,
+        "{}",
+        "ortho_norm initialization failed {ortho_norm}"
+    );
+    let ortho_shape_fail = tch::nn::f_init(Init::Orthogonal { gain: 1.0 }, &[10], Device::Cpu);
+    assert!(ortho_shape_fail.is_err());
+    let kaiming_u = vs.root().var("kaiming_u", &[20, 100], nn::init::DEFAULT_KAIMING_UNIFORM);
+    assert!(f64::abs(f64::from(kaiming_u.mean(Kind::Float))) < 5e-3);
+    // The expected stdev is sqrt(2 / 100)
+    assert!(f64::abs(f64::from(kaiming_u.std(true)) - (0.02f64).sqrt()) < 2e-3);
+    let kaiming_n = vs.root().var("kaiming_n", &[20, 100], nn::init::DEFAULT_KAIMING_NORMAL);
+    assert!(f64::abs(f64::from(kaiming_n.mean(Kind::Float))) < 5e-3);
+    assert!(f64::abs(f64::from(kaiming_n.std(true)) - (0.02f64).sqrt()) < 3e-3);
 }
 
-fn check_param_group(mut opt: tch::nn::Optimizer, foo: Tensor, bar: Tensor) {
+fn check_param_group(mut opt: tch::nn::Optimizer, var_foo: Tensor, var_bar: Tensor) {
     opt.set_lr(0.1);
     opt.set_lr_group(0, 0.);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.00");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.42");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.00");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.42");
     opt.set_lr_group(0, 0.1);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(0f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(0f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "-0.21");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.21");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "-0.21");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.21");
     opt.set_lr_group(7, 0.);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(0.22f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(0.22f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.01");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.21");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.01");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.21");
     // The following sets the learning rate for both groups.
     opt.set_lr(0.);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.01");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.21");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.01");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.21");
     opt.set_lr(0.1);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(0.42f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.11");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.31");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.11");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.31");
 }
 
 #[test]
@@ -292,9 +309,9 @@ fn param_group() {
     let vs = VarStore::new(Device::Cpu);
     let opt = tch::nn::Sgd::default().build(&vs, 1.0).unwrap();
     let root = vs.root();
-    let foo = root.set_group(0).zeros("foo", &[]);
-    let bar = root.set_group(7).zeros("bar", &[]);
-    check_param_group(opt, foo, bar);
+    let var_foo = root.set_group(0).zeros("var_foo", &[]);
+    let var_bar = root.set_group(7).zeros("var_bar", &[]);
+    check_param_group(opt, var_foo, var_bar);
 }
 
 #[test]
@@ -334,28 +351,28 @@ fn param_group_weight_decay() {
     let mut opt = tch::nn::Sgd::default().build(&vs, 0.0).unwrap();
     opt.set_lr(0.1);
     let root = vs.root();
-    let foo = root.set_group(0).zeros("foo", &[]);
-    let bar = root.set_group(7).zeros("bar", &[]);
+    let var_foo = root.set_group(0).zeros("var_foo", &[]);
+    let var_bar = root.set_group(7).zeros("var_bar", &[]);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.50");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.50");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.50");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.50");
     opt.set_weight_decay(0.1);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.49");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.49");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.49");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.49");
     opt.set_weight_decay_group(7, 0.);
     for _idx in 1..100 {
-        let loss = (&foo + &bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
+        let loss = (&var_foo + &var_bar).mse_loss(&Tensor::from(1f32), tch::Reduction::Mean);
         opt.backward_step(&loss);
     }
-    assert_eq!(format!("{:.2}", f64::from(&foo)), "0.30");
-    assert_eq!(format!("{:.2}", f64::from(&bar)), "0.69");
+    assert_eq!(format!("{:.2}", f64::from(&var_foo)), "0.30");
+    assert_eq!(format!("{:.2}", f64::from(&var_bar)), "0.69");
 }
 
 #[test]
@@ -431,7 +448,7 @@ fn path_half_precision_conversion() {
 
 #[test]
 fn path_free_type_conversion() {
-    let vs = VarStore::new(Device::Cpu);
+    let mut vs = VarStore::new(Device::Cpu);
 
     // Define a VarStore with 3 variables. 2 of them are in a sub-path named "convert" and
     // will be cast to half-precision. The other variables in the VarStore will be unaffected
@@ -443,6 +460,9 @@ fn path_free_type_conversion() {
     assert_eq!(vs.root().sub("convert").sub("group_1").get("ones").unwrap().kind(), Kind::Float);
     assert_eq!(vs.root().sub("convert").sub("group_2").get("zeros").unwrap().kind(), Kind::Float);
 
+    // Disable gradient tracking as this would raise an error when converting to a
+    // non-float type like bool.
+    vs.freeze();
     vs.root().sub("convert").set_kind(Kind::Bool);
 
     assert_eq!(vs.root().sub("ignore").get("zeros").unwrap().kind(), Kind::Float);
@@ -450,6 +470,7 @@ fn path_free_type_conversion() {
     assert_eq!(vs.root().sub("convert").sub("group_2").get("zeros").unwrap().kind(), Kind::Bool);
 
     vs.root().sub("convert").set_kind(Kind::Float);
+    vs.unfreeze();
 
     assert_eq!(vs.root().sub("ignore").get("zeros").unwrap().kind(), Kind::Float);
     assert_eq!(vs.root().sub("convert").sub("group_1").get("ones").unwrap().kind(), Kind::Float);
@@ -491,4 +512,57 @@ fn device_migration() {
         assert_eq!(linear_layer.bs.as_ref().unwrap().device(), Device::Cpu);
         assert_eq!(vs.device(), Device::Cpu);
     }
+}
+
+#[test]
+fn merge_var_stores_no_prefixes() {
+    let vs_1 = VarStore::new(Device::Cpu);
+    let _ = vs_1.root().entry("key_1").or_zeros(&[3, 1, 4]);
+    let _ = vs_1.root().entry("key_2").or_zeros(&[1, 5, 9]);
+
+    let vs_2 = VarStore::new(Device::Cpu);
+    let _ = vs_2.root().entry("key_3").or_zeros(&[2, 4, 4]);
+    let _ = vs_2.root().entry("key_4").or_zeros(&[5, 2, 3]);
+
+    let merged_vs = VarStore::merge(vec![(vs_1, None), (vs_2, None)]).unwrap();
+    assert_eq!(merged_vs.variables().len(), 4);
+    assert_eq!(merged_vs.trainable_variables().len(), 4);
+    assert!(merged_vs.variables().contains_key("key_1"));
+    assert!(merged_vs.variables().contains_key("key_2"));
+    assert!(merged_vs.variables().contains_key("key_3"));
+    assert!(merged_vs.variables().contains_key("key_4"));
+}
+
+#[test]
+fn merge_var_stores_conflicting_keys() {
+    let vs_1 = VarStore::new(Device::Cpu);
+    let _ = vs_1.root().entry("duplicate_key_1").or_zeros(&[3, 1, 4]);
+    let _ = vs_1.root().entry("key_2").or_zeros(&[1, 5, 9]);
+
+    let vs_2 = VarStore::new(Device::Cpu);
+    let _ = vs_2.root().entry("duplicate_key_1").or_zeros(&[2, 4, 4]);
+    let _ = vs_2.root().entry("key_3").or_zeros(&[5, 2, 3]);
+
+    let merged_vs = VarStore::merge(vec![(vs_1, None), (vs_2, None)]);
+    assert!(matches!(merged_vs, Err(TchError::Torch(t)) if t==
+            "Duplicate variable name found: duplicate_key_1. Provide a unique prefix to allow merge operation"));
+}
+
+#[test]
+fn merge_var_stores_with_prefixes() {
+    let vs_1 = VarStore::new(Device::Cpu);
+    let _ = vs_1.root().entry("key_1").or_zeros(&[3, 1, 4]);
+    let _ = vs_1.root().entry("key_2").or_zeros(&[1, 5, 9]);
+
+    let vs_2 = VarStore::new(Device::Cpu);
+    let _ = vs_2.root().entry("key_3").or_zeros(&[2, 4, 4]);
+    let _ = vs_2.root().entry("key_4").or_zeros(&[5, 2, 3]);
+
+    let merged_vs = VarStore::merge(vec![(vs_1, Some("vs_1.")), (vs_2, Some("vs_2."))]).unwrap();
+    assert_eq!(merged_vs.variables().len(), 4);
+    assert_eq!(merged_vs.trainable_variables().len(), 4);
+    assert!(merged_vs.variables().contains_key("vs_1.key_1"));
+    assert!(merged_vs.variables().contains_key("vs_1.key_2"));
+    assert!(merged_vs.variables().contains_key("vs_2.key_3"));
+    assert!(merged_vs.variables().contains_key("vs_2.key_4"));
 }

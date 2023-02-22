@@ -239,13 +239,14 @@ impl From<&str> for IValue {
 }
 
 impl IValue {
+    #![allow(unused_unsafe)]
     pub(super) fn to_c(&self) -> Result<*mut CIValue, TchError> {
         let c = unsafe_torch_err!(match self {
             IValue::Tensor(tensor) => ati_tensor(tensor.c_tensor),
             IValue::Int(i) => ati_int(*i),
             IValue::None => ati_none(),
             IValue::Double(f) => ati_double(*f),
-            IValue::Bool(b) => ati_bool(if *b { 1 } else { 0 }),
+            IValue::Bool(b) => ati_bool(i32::from(*b)),
             IValue::Tuple(v) => {
                 let v = v.iter().map(Self::to_c).collect::<Result<Vec<_>, TchError>>()?;
                 let tuple = ati_tuple(v.as_ptr(), v.len() as c_int);
@@ -266,7 +267,7 @@ impl IValue {
             IValue::IntList(v) => ati_int_list(v.as_ptr(), v.len() as c_int),
             IValue::DoubleList(v) => ati_double_list(v.as_ptr(), v.len() as c_int),
             IValue::BoolList(v) => {
-                let v: Vec<libc::c_char> = v.iter().map(|&b| if b { 1 } else { 0 }).collect();
+                let v: Vec<libc::c_char> = v.iter().map(|&b| libc::c_char::from(b)).collect();
                 ati_bool_list(v.as_ptr(), v.len() as c_int)
             }
             IValue::TensorList(v) => {
@@ -296,7 +297,10 @@ impl IValue {
                 }
                 dict
             }
-            IValue::Object(Object { c_ivalue }) => *c_ivalue,
+            IValue::Object(Object { c_ivalue }) => {
+                // Clone the object if necessary before passing the pointer to the C++ side.
+                unsafe_torch_err!(ati_clone(*c_ivalue))
+            }
         });
         Ok(c)
     }
@@ -316,7 +320,7 @@ impl IValue {
             4 => {
                 let b = unsafe_torch_err!(ati_to_bool(c_ivalue));
                 if b < 0 {
-                    return Err(TchError::Kind(format!("unexpected bool value {}", b)));
+                    return Err(TchError::Kind(format!("unexpected bool value {b}")));
                 }
                 IValue::Bool(b != 0)
             }
@@ -390,7 +394,7 @@ impl IValue {
                 free = false;
                 IValue::Object(Object { c_ivalue })
             }
-            _ => return Err(TchError::Kind(format!("unhandled tag {}", tag))),
+            _ => return Err(TchError::Kind(format!("unhandled tag {tag}"))),
         };
         if free {
             unsafe_torch_err!(ati_free(c_ivalue));
@@ -511,6 +515,26 @@ impl CModule {
         let c_ivalue = unsafe_torch_err!(atm_method_(
             self.c_module,
             method_name.as_ptr(),
+            ts.as_ptr(),
+            ts.len() as c_int
+        ));
+        for x in ts {
+            unsafe { ati_free(x) }
+        }
+        IValue::of_c(c_ivalue)
+    }
+
+    /// Create a specified custom JIT class object with the given class name, eg: `__torch__.foo.Bar`
+    pub fn create_class_is<T: Borrow<IValue>>(
+        &self,
+        clz_name: &str,
+        ts: &[T],
+    ) -> Result<IValue, TchError> {
+        let ts = ts.iter().map(|x| x.borrow().to_c()).collect::<Result<Vec<_>, TchError>>()?;
+        let clz_name = std::ffi::CString::new(clz_name)?;
+        let c_ivalue = unsafe_torch_err!(atm_create_class_(
+            self.c_module,
+            clz_name.as_ptr(),
             ts.as_ptr(),
             ts.len() as c_int
         ));
@@ -701,15 +725,30 @@ pub fn set_profiling_mode(b: bool) {
     f_set_profiling_mode(b).unwrap()
 }
 
+/// Enables or disables the graph executor optimizer for the current thread.
+///
+/// # Arguments
+///
+/// * `b` - A boolean that if true enables the graph executor optimizer for the current thread.
+///
+/// This function returns an error if it is not possible to enable or disable the graph executor optimizer.
 pub fn f_set_graph_executor_optimize(b: bool) -> Result<(), TchError> {
     unsafe_torch_err!(at_set_graph_executor_optimize(b));
     Ok(())
 }
 
+/// Enables or disables the graph executor optimizer for the current thread.
+///
+/// # Arguments
+///
+/// * `b` - A boolean that if true enables the graph executor optimizer for the current thread.
+///
+/// This panics if it is not possible to enable or disable the graph executor optimizer.
 pub fn set_graph_executor_optimize(b: bool) {
     f_set_graph_executor_optimize(b).unwrap();
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, PartialEq)]
 pub struct Object {
     c_ivalue: *mut CIValue,
@@ -734,6 +773,18 @@ impl Object {
         }
         IValue::of_c(c_ivalue)
     }
+
+    pub fn getattr(&self, attr_name: &str) -> Result<IValue, TchError> {
+        let property_name = std::ffi::CString::new(attr_name)?;
+        let c_ivalue =
+            unsafe_torch_err!(ati_object_getattr_(self.c_ivalue, property_name.as_ptr()));
+        if c_ivalue.is_null() {
+            return Err(TchError::Torch(format!(
+                "Object.getattr(\"{attr_name}\") returned CIValue nullptr"
+            )));
+        }
+        IValue::of_c(c_ivalue)
+    }
 }
 
 impl Drop for Object {
@@ -745,6 +796,8 @@ impl Drop for Object {
 #[cfg(test)]
 mod tests {
     use super::IValue;
+    use std::f64::consts;
+
     fn round_trip<T: Into<IValue>>(t: T) {
         let ivalue: IValue = t.into();
         let ivalue2 = IValue::of_c(ivalue.to_c().unwrap()).unwrap();
@@ -757,13 +810,13 @@ mod tests {
         round_trip(false);
         round_trip(-1);
         round_trip(42);
-        round_trip(3.1415);
+        round_trip(15);
         round_trip("".to_string());
         round_trip("foobar".to_string());
-        round_trip((42, 3.1415));
+        round_trip((42, consts::PI));
         round_trip(vec![42, 1337]);
-        round_trip(vec![2.71828, 3.141592, 299792458.00001]);
-        round_trip((vec![true, false, true, true], vec![2.71828, 3.141592, 299792458.00001]));
+        round_trip(vec![consts::E, consts::PI, 299792458.00001]);
+        round_trip((vec![true, false, true, true], vec![consts::E, consts::PI, 299792458.00001]));
         round_trip(vec![IValue::from(42), IValue::from("foobar")]);
         round_trip(vec![
             (IValue::from(42), IValue::from("foobar")),

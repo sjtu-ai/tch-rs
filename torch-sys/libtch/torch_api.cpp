@@ -1,8 +1,9 @@
 #include<torch/csrc/autograd/engine.h>
 #include<torch/csrc/jit/frontend/tracer.h>
 #include<torch/csrc/jit/runtime/graph_executor.h>
-#include <torch/csrc/jit/passes/fixup_trace_scope_blocks.h>
-#include <torch/csrc/jit/passes/normalize_ops.h>
+#include<torch/csrc/jit/passes/fixup_trace_scope_blocks.h>
+#include<torch/csrc/jit/passes/normalize_ops.h>
+#include<torch/csrc/jit/mobile/import_data.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include<torch/torch.h>
 #include<ATen/autocast_mode.h>
@@ -47,6 +48,7 @@ c10::List<c10::optional<torch::Tensor>> of_carray_tensor_opt(torch::Tensor **vs,
 }
 
 at::Device device_of_int(int d) {
+    if (d == -2) return at::Device(at::kMPS);
     if (d < 0) return at::Device(at::kCPU);
     return at::Device(at::kCUDA, /*index=*/d);
 }
@@ -430,6 +432,24 @@ void at_load_multi(tensor *tensors, char **tensor_names, int ntensors, char *fil
   )
 }
 
+void at_loadz_callback(char *filename, void *data, void (*f)(void *, char *, tensor)) {
+  PROTECT(
+    auto params = torch::jit::_load_parameters(filename);
+    for (const auto &p : params) {
+      f(data, (char*)p.first.c_str(), new torch::Tensor(p.second));
+    }
+  )
+}
+
+void at_loadz_callback_with_device(char *filename, void *data, void (*f)(void *, char *, tensor), int device_id) {
+  PROTECT(
+    auto params = torch::jit::_load_parameters(filename, device_of_int(device_id));
+    for (const auto &p : params) {
+      f(data, (char*)p.first.c_str(), new torch::Tensor(p.second));
+    }
+  )
+}
+
 void at_load_callback(char *filename, void *data, void (*f)(void *, char *, tensor)) {
   PROTECT(
     auto module = torch::jit::load(filename);
@@ -668,12 +688,16 @@ void at_run_backward(tensor *tensors,
 optimizer ato_adam(double learning_rate,
                    double beta1,
                    double beta2,
-                   double weight_decay) {
+                   double weight_decay,
+                   double eps,
+                   bool amsgrad) {
   PROTECT(
     auto options =
       torch::optim::AdamOptions(learning_rate)
         .betas(std::tuple<double, double>(beta1, beta2))
-        .weight_decay(weight_decay);
+        .weight_decay(weight_decay)
+        .eps(eps)
+        .amsgrad(amsgrad);
     return new torch::optim::Adam(vector<torch::Tensor>(), options);
   )
   return nullptr;
@@ -682,12 +706,16 @@ optimizer ato_adam(double learning_rate,
 optimizer ato_adamw(double learning_rate,
                     double beta1,
                     double beta2,
-                    double weight_decay) {
+                    double weight_decay,
+                    double eps,
+                    bool amsgrad) {
   PROTECT(
     auto options =
       torch::optim::AdamWOptions(learning_rate)
         .betas(std::tuple<double, double>(beta1, beta2))
-        .weight_decay(weight_decay);
+        .weight_decay(weight_decay)
+        .eps(eps)
+        .amsgrad(amsgrad);
     return new torch::optim::AdamW(vector<torch::Tensor>(), options);
   )
   return nullptr;
@@ -958,6 +986,18 @@ int atc_cudnn_is_available() {
   return -1;
 }
 
+void atc_manual_seed(uint64_t seed) {
+  PROTECT(return torch::cuda::manual_seed(seed);)
+}
+
+void atc_manual_seed_all(uint64_t seed) {
+  PROTECT(return torch::cuda::manual_seed_all(seed);)
+}
+
+void atc_synchronize(int64_t device_index) {
+  PROTECT(return torch::cuda::synchronize(device_index);)
+}
+
 int atc_user_enabled_cudnn() {
   PROTECT(return at::globalContext().userEnabledCuDNN();)
   return -1;
@@ -1051,6 +1091,19 @@ ivalue atm_method_(module m, char *method_name, ivalue *ivalues, int nivalues) {
       inputs.push_back(*(ivalues[i]));
     torch::jit::IValue output = m->get_method(method_name)(std::move(inputs));
     return new torch::jit::IValue(output);
+  )
+  return nullptr;
+}
+
+ivalue atm_create_class_(module m, char *clz_name, ivalue *ivalues, int nivalues) {
+  PROTECT(
+    std::vector<torch::jit::IValue> inputs;
+    for (int i = 0; i < nivalues; ++i)
+      inputs.push_back(*(ivalues[i]));
+
+    c10::QualifiedName base(clz_name);
+    torch::jit::IValue obj = m->create_class(c10::QualifiedName(clz_name), std::move(inputs));
+    return new torch::jit::IValue(obj);
   )
   return nullptr;
 }
@@ -1204,11 +1257,27 @@ ivalue ati_generic_list(ivalue *is, int nvalues) {
   return nullptr;
 }
 
+using generic_dict = c10::Dict<torch::jit::IValue, torch::jit::IValue>;
+
 ivalue ati_generic_dict(ivalue *is, int nvalues) {
-  c10::Dict<torch::jit::IValue, torch::jit::IValue> dict(c10::AnyType::get(), c10::AnyType::get());
   PROTECT(
-    for (int i = 0; i < nvalues; ++i) dict.insert(*(is[2*i]), *(is[2*i+1]));
-    return new torch::jit::IValue(dict);
+    bool all_keys_are_str = true;
+    for (int i = 0; i < nvalues; ++i) {
+        if (!is[2*i]->isString()) all_keys_are_str = false;
+    }
+    bool all_values_are_tensor = true;
+    for (int i = 0; i < nvalues; ++i) {
+        if (!is[2*i+1]->isTensor()) all_values_are_tensor = false;
+    }
+    if (all_keys_are_str && all_values_are_tensor) {
+      generic_dict dict(c10::StringType::get(), c10::TensorType::get());
+      for (int i = 0; i < nvalues; ++i) dict.insert(is[2*i]->toString(), is[2*i+1]->toTensor());
+      return new torch::jit::IValue(dict);
+    } else {
+      generic_dict dict(c10::AnyType::get(), c10::AnyType::get());
+      for (int i = 0; i < nvalues; ++i) dict.insert(*(is[2*i]), *(is[2*i+1]));
+      return new torch::jit::IValue(dict);
+    }
   )
   return nullptr;
 }
@@ -1441,6 +1510,21 @@ ivalue ati_object_method_(ivalue i, char *method_name, ivalue *ivalues, int niva
       inputs.push_back(*(ivalues[j]));
     torch::jit::IValue output = i->toObjectRef().type()->getMethod(method_name)(std::move(inputs));
     return new torch::jit::IValue(output);
+  )
+  return nullptr;
+}
+
+ivalue ati_object_getattr_(ivalue i, char *attr_name) {
+  PROTECT(
+    torch::jit::IValue output  = i->toObjectRef().getAttr(attr_name);
+    return new torch::jit::IValue(output);
+  )
+  return nullptr;
+}
+
+ivalue ati_clone(ivalue i) {
+  PROTECT(
+    return new torch::jit::IValue(*i);
   )
   return nullptr;
 }

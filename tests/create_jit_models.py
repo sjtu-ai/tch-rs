@@ -1,4 +1,5 @@
 import torch
+from typing import Dict, Tuple
 
 class Foo(torch.jit.ScriptModule):
     def __init__(self, v):
@@ -88,3 +89,31 @@ def foo_6(x: torch.Tensor):
 
 
 foo_6.save("foo6.pt")
+
+# https://github.com/LaurentMazare/tch-rs/issues/475
+@torch.jit.script
+class InputObject:
+    def __init__(self, foo, bar):
+        self.foo = foo
+        self.bar = bar
+
+class TorchScriptExample(torch.jit.ScriptModule):
+    @torch.jit.script_method
+    def add_them(self, data: InputObject) -> torch.Tensor:
+        return data.foo + data.bar
+
+    @torch.jit.script_method
+    def make_input_object(self, foo, bar):
+        return InputObject(foo, bar)
+
+foo_7 = TorchScriptExample()
+foo_7.save("foo7.pt")
+
+# https://github.com/LaurentMazare/tch-rs/issues/597
+class DictExample(torch.jit.ScriptModule):
+    @torch.jit.script_method
+    def generate(self, batch: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        return batch["foo"], batch["bar"]
+
+foo_8 = DictExample()
+foo_8.save("foo8.pt")

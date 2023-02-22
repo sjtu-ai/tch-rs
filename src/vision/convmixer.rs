@@ -13,13 +13,13 @@ fn block(p: nn::Path, dim: i64, kernel_size: i64) -> impl nn::ModuleT {
     let conv2 = nn::conv2d(&p / "1", dim, dim, 1, Default::default());
     let bn2 = nn::batch_norm2d(&p / "3", dim, Default::default());
     nn::func_t(move |xs, train| {
-        let ys = xs.apply(&conv1).gelu().apply_t(&bn1, train);
-        (xs + ys).apply(&conv2).gelu().apply_t(&bn2, train)
+        let ys = xs.apply(&conv1).gelu("none").apply_t(&bn1, train);
+        (xs + ys).apply(&conv2).gelu("none").apply_t(&bn2, train)
     })
 }
 
-fn convmixer<'a>(
-    p: &'a nn::Path,
+fn convmixer(
+    p: &nn::Path,
     nclasses: i64,
     dim: i64,
     depth: i64,
@@ -32,7 +32,7 @@ fn convmixer<'a>(
     let blocks: Vec<_> = (0..depth).map(|index| block(p / (3 + index), dim, kernel_size)).collect();
     let fc = nn::linear(p / "25", dim, nclasses, Default::default());
     nn::func_t(move |xs, train| {
-        let mut xs = xs.apply(&conv1).gelu().apply_t(&bn1, train);
+        let mut xs = xs.apply(&conv1).gelu("none").apply_t(&bn1, train);
         for block in blocks.iter() {
             xs = xs.apply_t(block, train)
         }
@@ -40,10 +40,10 @@ fn convmixer<'a>(
     })
 }
 
-pub fn c1536_20<'a>(p: &'a nn::Path, nclasses: i64) -> nn::FuncT<'static> {
+pub fn c1536_20(p: &nn::Path, nclasses: i64) -> nn::FuncT<'static> {
     convmixer(p, nclasses, 1536, 20, 9, 7)
 }
 
-pub fn c1024_20<'a>(p: &'a nn::Path, nclasses: i64) -> nn::FuncT<'static> {
+pub fn c1024_20(p: &nn::Path, nclasses: i64) -> nn::FuncT<'static> {
     convmixer(p, nclasses, 1024, 20, 9, 14)
 }

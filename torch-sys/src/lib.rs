@@ -1,3 +1,4 @@
+pub mod cuda;
 pub mod io;
 
 use libc::{c_char, c_int, c_uchar, c_void, size_t};
@@ -114,6 +115,17 @@ extern "C" {
         n: c_int,
         stream_ptr: *mut c_void,
     );
+    pub fn at_loadz_callback(
+        filename: *const c_char,
+        data: *mut c_void,
+        f: extern "C" fn(*mut c_void, name: *const c_char, t: *mut C_tensor),
+    );
+    pub fn at_loadz_callback_with_device(
+        filename: *const c_char,
+        data: *mut c_void,
+        f: extern "C" fn(*mut c_void, name: *const c_char, t: *mut C_tensor),
+        device_id: c_int,
+    );
     pub fn at_load_callback(
         filename: *const c_char,
         data: *mut c_void,
@@ -143,16 +155,6 @@ extern "C" {
 pub mod c_generated;
 
 extern "C" {
-    pub fn atc_cuda_device_count() -> c_int;
-    pub fn atc_cuda_is_available() -> c_int;
-    pub fn atc_cudnn_is_available() -> c_int;
-    pub fn atc_user_enabled_cudnn() -> c_int;
-    pub fn atc_set_user_enabled_cudnn(b: c_int);
-    pub fn atc_set_benchmark_cudnn(b: c_int);
-    pub fn atc_set_deterministic_cudnn(b: c_int);
-}
-
-extern "C" {
     pub fn get_and_reset_last_err() -> *mut c_char;
 }
 
@@ -162,8 +164,22 @@ pub struct C_optimizer {
 }
 
 extern "C" {
-    pub fn ato_adam(lr: f64, beta1: f64, beta2: f64, wd: f64) -> *mut C_optimizer;
-    pub fn ato_adamw(lr: f64, beta1: f64, beta2: f64, wd: f64) -> *mut C_optimizer;
+    pub fn ato_adam(
+        lr: f64,
+        beta1: f64,
+        beta2: f64,
+        wd: f64,
+        eps: f64,
+        amsgrad: bool,
+    ) -> *mut C_optimizer;
+    pub fn ato_adamw(
+        lr: f64,
+        beta1: f64,
+        beta2: f64,
+        wd: f64,
+        eps: f64,
+        amsgrad: bool,
+    ) -> *mut C_optimizer;
     pub fn ato_rms_prop(
         lr: f64,
         alpha: f64,
@@ -253,6 +269,7 @@ extern "C" {
     pub fn ati_to_tensor_list(arg: *mut CIValue, outputs: *mut *mut C_tensor, n: c_int);
     pub fn ati_to_string(arg: *mut CIValue) -> *mut c_char;
 
+    pub fn ati_clone(arg: *mut CIValue) -> *mut CIValue;
     pub fn ati_free(arg: *mut CIValue);
 
     pub fn ati_object_method_(
@@ -261,6 +278,8 @@ extern "C" {
         args: *const *mut CIValue,
         n: c_int,
     ) -> *mut CIValue;
+
+    pub fn ati_object_getattr_(arg: *mut CIValue, attr_name: *const c_char) -> *mut CIValue;
 
     pub fn atm_load(filename: *const c_char) -> *mut CModule_;
     pub fn atm_load_on_device(filename: *const c_char, device: c_int) -> *mut CModule_;
@@ -277,6 +296,12 @@ extern "C" {
     pub fn atm_method_(
         m: *mut CModule_,
         method_name: *const c_char,
+        args: *const *mut CIValue,
+        n: c_int,
+    ) -> *mut CIValue;
+    pub fn atm_create_class_(
+        m: *mut CModule_,
+        clz_name: *const c_char,
         args: *const *mut CIValue,
         n: c_int,
     ) -> *mut CIValue;

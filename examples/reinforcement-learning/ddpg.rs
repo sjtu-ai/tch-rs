@@ -304,7 +304,7 @@ pub fn run() -> cpython::PyResult<()> {
     println!("action space: {}", env.action_space());
     println!("observation space: {:?}", env.observation_space());
 
-    let num_obs = env.observation_space().iter().fold(1, |acc, x| acc * x) as usize;
+    let num_obs = env.observation_space().iter().product::<i64>() as usize;
     let num_actions = env.action_space() as usize;
 
     let actor = Actor::new(num_obs, num_actions, ACTOR_LEARNING_RATE);
@@ -318,7 +318,7 @@ pub fn run() -> cpython::PyResult<()> {
         let mut total_reward = 0.0;
         for _ in 0..EPISODE_LENGTH {
             let mut actions = 2.0 * f64::from(agent.actions(&obs));
-            actions = actions.max(-2.0).min(2.0);
+            actions = actions.clamp(-2.0, 2.0);
 
             let action_vec = vec![actions];
             let step = env.step(&action_vec)?;
@@ -332,7 +332,7 @@ pub fn run() -> cpython::PyResult<()> {
             obs = step.obs;
         }
 
-        println!("episode {} with total reward of {}", episode, total_reward);
+        println!("episode {episode} with total reward of {total_reward}");
 
         for _ in 0..TRAINING_ITERATIONS {
             agent.train(TRAINING_BATCH_SIZE);
