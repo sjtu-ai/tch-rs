@@ -9,6 +9,8 @@ mod iter;
 mod npy;
 mod ops;
 
+pub use super::wrappers::custom_function::*;
+
 pub use super::wrappers::tensor::{
     autocast, no_grad, no_grad_guard, with_grad, NoGradGuard, Reduction, Tensor,
 };

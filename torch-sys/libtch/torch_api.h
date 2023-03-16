@@ -265,6 +265,8 @@ bool tch_read_stream_read(void *stream_ptr, uint8_t *buf, size_t size, size_t *n
 
 #include "torch_api_generated.h"
 
+#include "torch_custom_function.h"
+
 #ifdef __cplusplus
 };
 #endif

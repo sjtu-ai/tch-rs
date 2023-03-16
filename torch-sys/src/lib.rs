@@ -1,4 +1,7 @@
+#![feature(trait_alias)]
+
 pub mod cuda;
+pub mod custom_function_ffi;
 pub mod io;
 
 use libc::{c_char, c_int, c_uchar, c_void, size_t};
