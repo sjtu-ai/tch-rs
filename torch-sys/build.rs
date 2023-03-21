@@ -11,7 +11,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const TORCH_VERSION: &str = "1.13.0";
+const TORCH_VERSION: &str = "2.0.0";
 
 #[cfg(feature = "ureq")]
 fn download<P: AsRef<Path>>(source_url: &str, target_file: P) -> anyhow::Result<()> {
@@ -113,12 +113,25 @@ fn prepare_libtorch_dir() -> PathBuf {
                         "cu113" => "%2Bcu113",
                         "cu116" => "%2Bcu116",
                         "cu117" => "%2Bcu117",
+                        "cu118" => "%2Bcu118",
                         _ => panic!("unsupported device {}, TORCH_CUDA_VERSION may be set incorrectly?", device),
                     }
                 ),
-                "macos" => format!(
-                    "https://download.pytorch.org/libtorch/cpu/libtorch-macos-{TORCH_VERSION}.zip"
-                ),
+                "macos" => {
+                    if let Ok(arch) = env::var("CARGO_CFG_TARGET_ARCH") {
+                        if arch.as_str() == "aarch64" {
+                            panic!("Pre-built version of libtorch for apple silicon are not available.
+                            You can install torch manually following the indications from https://github.com/LaurentMazare/tch-rs/issues/629
+                            pip3 install torch=={TORCH_VERSION}
+
+                            Then update the following environment variables:
+                            export LIBTORCH=$(python3 -c 'import torch; from pathlib import Path; print(Path(torch.__file__).parent)')
+                            export DYLD_LIBRARY_PATH=${{LIBTORCH}}/lib
+                            ");
+                        }
+                    }
+                    format!("https://download.pytorch.org/libtorch/cpu/libtorch-macos-{TORCH_VERSION}.zip")
+                },
                 "windows" => format!(
                     "https://download.pytorch.org/libtorch/{}/libtorch-win-shared-with-deps-{}{}.zip",
                     device, TORCH_VERSION, match device.as_ref() {
@@ -127,6 +140,7 @@ fn prepare_libtorch_dir() -> PathBuf {
                         "cu113" => "%2Bcu113",
                         "cu116" => "%2Bcu116",
                         "cu117" => "%2Bcu117",
+                        "cu118" => "%2Bcu118",
                         _ => ""
                     }),
                 _ => panic!("Unsupported OS"),
@@ -155,6 +169,7 @@ fn make<P: AsRef<Path>>(libtorch: P, use_cuda: bool, use_hip: bool) {
     } else {
         "libtch/fake_cuda_dependency.cpp"
     };
+    println!("cargo:rerun-if-changed={}", cuda_dependency);
     println!("cargo:rerun-if-changed=libtch/torch_api.cpp");
     println!("cargo:rerun-if-changed=libtch/torch_api.h");
     println!("cargo:rerun-if-changed=libtch/torch_api_generated.cpp.h");

@@ -4,7 +4,7 @@ pub mod cuda;
 pub mod custom_function_ffi;
 pub mod io;
 
-use libc::{c_char, c_int, c_uchar, c_void, size_t};
+use libc::{c_char, c_int, c_long, c_uchar, c_void, size_t};
 
 #[repr(C)]
 pub struct C_scalar {
@@ -33,6 +33,7 @@ extern "C" {
     pub fn at_defined(arg: *mut C_tensor) -> c_int;
     pub fn at_is_sparse(arg: *mut C_tensor) -> c_int;
     pub fn at_is_mkldnn(arg: *mut C_tensor) -> c_int;
+    pub fn at_is_contiguous(args: *mut C_tensor) -> c_int;
     pub fn at_backward(arg: *mut C_tensor, keep_graph: c_int, create_graph: c_int);
     pub fn at_backward_with_grad(
         arg: *mut C_tensor,
@@ -149,10 +150,23 @@ extern "C" {
     );
 
     pub fn at_manual_seed(seed: i64);
-}
-
-extern "C" {
     pub fn at_set_graph_executor_optimize(b: bool);
+    pub fn at_context_has_openmp() -> bool;
+    pub fn at_context_has_mkl() -> bool;
+    pub fn at_context_has_lapack() -> bool;
+    pub fn at_context_has_mkldnn() -> bool;
+    pub fn at_context_has_magma() -> bool;
+    pub fn at_context_has_cuda() -> bool;
+    pub fn at_context_has_cudart() -> bool;
+    pub fn at_context_has_cusolver() -> bool;
+    pub fn at_context_has_hip() -> bool;
+    pub fn at_context_has_ipu() -> bool;
+    pub fn at_context_has_xla() -> bool;
+    pub fn at_context_has_lazy() -> bool;
+    pub fn at_context_has_mps() -> bool;
+    pub fn at_context_has_ort() -> bool;
+    pub fn at_context_version_cudnn() -> c_long;
+    pub fn at_context_version_cudart() -> c_long;
 }
 
 pub mod c_generated;
@@ -208,9 +222,6 @@ extern "C" {
     pub fn ato_zero_grad(arg: *mut C_optimizer);
     pub fn ato_step(arg: *mut C_optimizer);
     pub fn ato_free(arg: *mut C_optimizer);
-}
-
-extern "C" {
     pub fn at_save_image(arg: *mut C_tensor, filename: *const c_char) -> c_int;
     pub fn at_load_image(filename: *const c_char) -> *mut C_tensor;
     pub fn at_load_image_from_memory(
@@ -331,6 +342,8 @@ extern "C" {
         outputs: *const *mut C_tensor,
         noutputs: c_int,
     );
+    pub fn atm_set_tensor_expr_fuser_enabled(enabled: c_int);
+    pub fn atm_get_tensor_expr_fuser_enabled() -> bool;
 }
 
 extern "C" {
