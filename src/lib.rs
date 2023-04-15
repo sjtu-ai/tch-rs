@@ -17,7 +17,7 @@ pub use wrappers::optimizer::COptimizer;
 pub use wrappers::scalar::Scalar;
 pub use wrappers::utils;
 pub use wrappers::{
-    custom_function::*, get_num_interop_threads, get_num_threads, manual_seed,
+    cuda::*, custom_function::*, get_num_interop_threads, get_num_threads, manual_seed,
     set_num_interop_threads, set_num_threads, QEngine,
 };
 

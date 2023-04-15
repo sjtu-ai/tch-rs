@@ -1,6 +1,7 @@
 #![feature(trait_alias)]
 
 pub mod cuda;
+pub mod cuda_stream_ffi;
 pub mod custom_function_ffi;
 pub mod io;
 

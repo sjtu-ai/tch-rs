@@ -171,6 +171,9 @@ fn make<P: AsRef<Path>>(libtorch: P, use_cuda: bool, use_hip: bool) {
     };
     println!("cargo:rerun-if-changed={}", cuda_dependency);
     println!("cargo:rerun-if-changed=libtch/torch_api.cpp");
+    println!("cargo:rerun-if-changed=libtch/custom_cuda_stream.cpp");
+    println!("cargo:rerun-if-changed=libtch/torch_cuda_stream.h");
+    println!("cargo:rerun-if-changed=libtch/torch_cuda_stream.cpp");
     println!("cargo:rerun-if-changed=libtch/torch_api.h");
     println!("cargo:rerun-if-changed=libtch/torch_api_generated.cpp.h");
     println!("cargo:rerun-if-changed=libtch/torch_api_generated.h");
@@ -187,9 +190,11 @@ fn make<P: AsRef<Path>>(libtorch: P, use_cuda: bool, use_hip: bool) {
                 .warnings(false)
                 .include(includes.join("include"))
                 .include(includes.join("include/torch/csrc/api/include"))
+                .include("/usr/local/cuda/include")
                 .flag(&format!("-Wl,-rpath={}", lib.join("lib").display()))
                 .flag("-std=c++14")
                 .flag(&format!("-D_GLIBCXX_USE_CXX11_ABI={libtorch_cxx11_abi}"))
+                .file("libtch/torch_cuda_stream.cpp")
                 .file("libtch/torch_api.cpp")
                 .file(cuda_dependency)
                 .compile("tch");
@@ -204,6 +209,7 @@ fn make<P: AsRef<Path>>(libtorch: P, use_cuda: bool, use_hip: bool) {
                 .warnings(false)
                 .include(includes.join("include"))
                 .include(includes.join("include/torch/csrc/api/include"))
+                .include("/usr/local/cuda/include")
                 .file("libtch/torch_api.cpp")
                 .file(cuda_dependency)
                 .compile("tch");
@@ -244,6 +250,9 @@ fn main() {
         println!("cargo:rustc-link-lib=static=tch");
         if use_cuda {
             println!("cargo:rustc-link-lib=torch_cuda");
+            println!("cargo:rustc-link-lib=c10_cuda");
+            println!("cargo:rustc-link-lib=cudart");
+            println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
         }
         if use_cuda_cu {
             println!("cargo:rustc-link-lib=torch_cuda_cu");
