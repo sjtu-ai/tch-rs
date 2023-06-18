@@ -4,6 +4,49 @@ This documents the main changes to the `tch` crate.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+### Changed
+- Add a `pyo3-tch` crate for interacting with Python via PyO3
+  [730](https://github.com/LaurentMazare/tch-rs/pull/730).
+- Expose the cuda fuser enabled flag,
+  [728](https://github.com/LaurentMazare/tch-rs/pull/728).
+- Improved the safetensor error wrapping,
+  [720](https://github.com/LaurentMazare/tch-rs/pull/720).
+
+## v0.13.0 - 2023-05-18
+### Added
+- Support static linking in the build script,
+  [712](https://github.com/LaurentMazare/tch-rs/pull/712).
+- Make the libtorch download opt-in rather than a default behavior. The libtorch
+  library download can still be triggered by enabling the `download-libtorch`
+  feature, [707](https://github.com/LaurentMazare/tch-rs/pull/707).
+- Rename the `of_...` conversion functions to `from_...` so as to be closer to
+  the Rust best practices,
+  [706](https://github.com/LaurentMazare/tch-rs/pull/706). This is a breaking
+  change and will require modifying calls such as `of_slice` to be `from_slice`
+  instead.
+- Expose some functions so that Python extensions that operates on PyTorch
+  tensors can be written with `tch`,
+  [704](https://github.com/LaurentMazare/tch-rs/pull/704).
+- Rework the torch-sys build script making it easier to leverage a Python
+  PyTorch install as a source for libtorch,
+  [703](https://github.com/LaurentMazare/tch-rs/pull/703).
+
+## v0.12.0 - 2023-05-10
+### Changed
+- EfficientNet models have been reworked, pre-trained models used `safetensors`
+  weight by default, [679](https://github.com/LaurentMazare/tch-rs/pull/679).
+- None can be used for nullable scalar types,
+  [680](https://github.com/LaurentMazare/tch-rs/pull/680).
+- Automated conversion of list arguments: all the generated functions that take
+  as input a slice of int or float can now be used directly with int values or
+  fixed length arrays [682](https://github.com/LaurentMazare/tch-rs/pull/682).
+- Replace the `From<Tensor>` traits with some `TryFrom` versions,
+  [683](https://github.com/LaurentMazare/tch-rs/pull/683). This is a breaking
+  change, note that also the old version would flatten the tensor if needed to
+  reduce the number of dimensions, this has to be done explicitely with the new
+  version.
+
 ## v0.11.0 - 2023-03-20
 ### Added
 - Adapt to C++ PyTorch library (`libtorch`) version `v2.0.0`.

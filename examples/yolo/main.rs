@@ -54,7 +54,7 @@ fn iou(b1: &Bbox, b2: &Bbox) -> f64 {
 
 // Assumes x1 <= x2 and y1 <= y2
 pub fn draw_rect(t: &mut Tensor, x1: i64, x2: i64, y1: i64, y2: i64) {
-    let color = Tensor::of_slice(&[0., 0., 1.]).view([3, 1, 1]);
+    let color = Tensor::from_slice(&[0., 0., 1.]).view([3, 1, 1]);
     t.narrow(2, x1, x2 - x1).narrow(1, y1, y2 - y1).copy_(&color)
 }
 
@@ -65,7 +65,7 @@ pub fn report(pred: &Tensor, img: &Tensor, w: i64, h: i64) -> Result<Tensor> {
     let mut bboxes: Vec<Vec<Bbox>> = (0..nclasses).map(|_| vec![]).collect();
     // Extract the bounding boxes for which confidence is above the threshold.
     for index in 0..npreds {
-        let pred = Vec::<f64>::from(pred.get(index));
+        let pred = Vec::<f64>::try_from(pred.get(index))?;
         let confidence = pred[4];
         if confidence > CONFIDENCE_THRESHOLD {
             let mut class_index = 0;

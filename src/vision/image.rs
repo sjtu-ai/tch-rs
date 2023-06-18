@@ -5,11 +5,11 @@ use std::io;
 use std::path::Path;
 
 pub(crate) fn hwc_to_chw(tensor: &Tensor) -> Tensor {
-    tensor.permute(&[2, 0, 1])
+    tensor.permute([2, 0, 1])
 }
 
 pub(crate) fn chw_to_hwc(tensor: &Tensor) -> Tensor {
-    tensor.permute(&[1, 2, 0])
+    tensor.permute([1, 2, 0])
 }
 
 /// Loads an image from a file.
@@ -127,7 +127,7 @@ fn visit_dirs(dir: &Path, files: &mut Vec<std::fs::DirEntry>) -> Result<(), TchE
     Ok(())
 }
 
-/// Loads all the images in a director.
+/// Loads all the images in a directory.
 pub fn load_dir<T: AsRef<Path>>(path: T, out_w: i64, out_h: i64) -> Result<Tensor, TchError> {
     let mut files: Vec<std::fs::DirEntry> = vec![];
     visit_dirs(path.as_ref(), &mut files)?;

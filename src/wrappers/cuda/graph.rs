@@ -79,10 +79,10 @@ mod tests {
 
     use super::*;
     #[test]
-    fn test_cuda_graph() {
+    fn test_cuda_graph() -> anyhow::Result<()> {
         if !Cuda::is_available() {
             println!("CUDA is not available, skipping test");
-            return;
+            return Ok(());
         }
         // Placeholder input used for capture
         let device = Device::Cuda(0);
@@ -119,15 +119,17 @@ mod tests {
         let input = Tensor::full(&[5], 3, (Kind::Float, device));
         static_input.copy_(&input);
         graph.replay();
-        assert_eq!(f32::from(static_output.sum(Kind::Float)), 30.);
+        assert_eq!(f32::try_from(static_output.sum(Kind::Float))?, 30.);
 
         let input = Tensor::full(&[5], 4, (Kind::Float, device));
         static_input.copy_(&input);
         graph.replay();
-        assert_eq!(f32::from(static_output.sum(Kind::Float)), 40.);
+        assert_eq!(f32::try_from(static_output.sum(Kind::Float))?, 40.);
 
         // test othre functions
         let _pool_id = graph.get_pool_id();
         // graph.debug_dump("/tmp/_test_graph.dump");
+
+        Ok(())
     }
 }

@@ -1,7 +1,8 @@
 //! Numpy support for tensors.
 //!
-//! Format spec:
-//! https://docs.scipy.org/doc/numpy-1.14.2/neps/npy-format.html
+//! This module implements the support for reading and writing `.npy` and `.npz` files. The file
+//! format spec can be found at:
+//! <https://docs.scipy.org/doc/numpy-1.14.2/neps/npy-format.html>.
 use crate::{Kind, TchError, Tensor};
 use std::collections::HashMap;
 use std::fs::File;
@@ -176,7 +177,7 @@ impl crate::Tensor {
         }
         let mut data: Vec<u8> = vec![];
         reader.read_to_end(&mut data)?;
-        Tensor::f_of_data_size(&data, &header.shape, header.descr)
+        Tensor::f_from_data_size(&data, &header.shape, header.descr)
     }
 
     /// Reads a npz file and returns some named tensors.
@@ -198,7 +199,7 @@ impl crate::Tensor {
             }
 
             reader.read_to_end(&mut data)?;
-            let tensor = Tensor::f_of_data_size(&data, &header.shape, header.descr)?;
+            let tensor = Tensor::f_from_data_size(&data, &header.shape, header.descr)?;
             result.push((name, tensor))
         }
         Ok(result)

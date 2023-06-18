@@ -20,13 +20,14 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --features download-libtorch
 
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-2019, macOS-latest]
+        os: [ubuntu-latest, macOS-latest]
         rust: [stable, nightly]
     steps:
       - uses: actions/checkout@v2
@@ -38,6 +39,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --features download-libtorch
 
   fmt:
     name: Rustfmt
@@ -69,4 +71,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --examples --tests --all-features -- -D warnings
+          args: --examples --tests --all-features --all -- -D warnings

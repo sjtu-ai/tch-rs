@@ -7,9 +7,9 @@ use std::sync::Mutex;
 
 lazy_static! {
     static ref IMAGENET_MEAN: Mutex<Tensor> =
-        Mutex::new(Tensor::of_slice(&[0.485f32, 0.456, 0.406]).view((3, 1, 1)));
+        Mutex::new(Tensor::from_slice(&[0.485f32, 0.456, 0.406]).view((3, 1, 1)));
     static ref IMAGENET_STD: Mutex<Tensor> =
-        Mutex::new(Tensor::of_slice(&[0.229f32, 0.224, 0.225]).view((3, 1, 1)));
+        Mutex::new(Tensor::from_slice(&[0.229f32, 0.224, 0.225]).view((3, 1, 1)));
 }
 
 pub fn normalize(tensor: &Tensor) -> Result<Tensor, TchError> {
@@ -131,11 +131,11 @@ pub fn load_from_dir<T: AsRef<Path>>(dir: T) -> Result<Dataset, TchError> {
         let images = load_images_from_dir(train_path.join(label_dir))?;
         let nimages = images.size()[0];
         train_images.push(images);
-        train_labels.push(Tensor::ones(&[nimages], kind::INT64_CPU) * label_index);
+        train_labels.push(Tensor::ones([nimages], kind::INT64_CPU) * label_index);
         let images = load_images_from_dir(valid_path.join(label_dir))?;
         let nimages = images.size()[0];
         test_images.push(images);
-        test_labels.push(Tensor::ones(&[nimages], kind::INT64_CPU) * label_index);
+        test_labels.push(Tensor::ones([nimages], kind::INT64_CPU) * label_index);
     }
     Ok(Dataset {
         train_images: Tensor::f_cat(&train_images, 0)?,
@@ -1160,8 +1160,8 @@ pub fn top(tensor: &Tensor, k: i64) -> Vec<(f64, String)> {
         _ => panic!("unexpected tensor shape {tensor:?}"),
     };
     let (values, indexes) = tensor.topk(k, 0, true, true);
-    let values = Vec::<f64>::from(values);
-    let indexes = Vec::<i64>::from(indexes);
+    let values = Vec::<f64>::try_from(values).unwrap();
+    let indexes = Vec::<i64>::try_from(indexes).unwrap();
     values
         .iter()
         .zip(indexes.iter())

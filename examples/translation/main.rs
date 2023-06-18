@@ -83,7 +83,7 @@ impl Decoder {
             enc_outputs.shallow_clone()
         } else {
             let shape = [sz1, MAX_LENGTH as i64 - sz2, sz3];
-            let zeros = Tensor::zeros(&shape, (Kind::Float, self.device));
+            let zeros = Tensor::zeros(shape, (Kind::Float, self.device));
             Tensor::cat(&[enc_outputs, &zeros], 1)
         };
         let attn_applied = attn_weights.bmm(&enc_outputs).squeeze_dim(1);
@@ -106,7 +106,7 @@ impl Model {
         Model {
             encoder: Encoder::new(&vs / "enc", ilang.len(), hidden_dim),
             decoder: Decoder::new(&vs / "dec", hidden_dim, olang.len()),
-            decoder_start: Tensor::of_slice(&[olang.sos_token() as i64]).to_device(vs.device()),
+            decoder_start: Tensor::from_slice(&[olang.sos_token() as i64]).to_device(vs.device()),
             decoder_eos: olang.eos_token(),
             device: vs.device(),
         }
@@ -117,7 +117,7 @@ impl Model {
         let mut state = self.encoder.gru.zero_state(1);
         let mut enc_outputs = vec![];
         for &s in input_.iter() {
-            let s = Tensor::of_slice(&[s as i64]).to_device(self.device);
+            let s = Tensor::from_slice(&[s as i64]).to_device(self.device);
             let (out, state_) = self.encoder.forward(&s, &state);
             enc_outputs.push(out);
             state = state_;
@@ -129,10 +129,10 @@ impl Model {
         for &s in target.iter() {
             let (output, state_) = self.decoder.forward(&prev, &state, &enc_outputs, true);
             state = state_;
-            let target_tensor = Tensor::of_slice(&[s as i64]).to_device(self.device);
+            let target_tensor = Tensor::from_slice(&[s as i64]).to_device(self.device);
             loss = loss + output.nll_loss(&target_tensor);
             let (_, output) = output.topk(1, -1, true, true);
-            if self.decoder_eos == i64::from(&output) as usize {
+            if self.decoder_eos == i64::try_from(&output).unwrap() as usize {
                 break;
             }
             prev = if use_teacher_forcing { target_tensor } else { output };
@@ -144,7 +144,7 @@ impl Model {
         let mut state = self.encoder.gru.zero_state(1);
         let mut enc_outputs = vec![];
         for &s in input_.iter() {
-            let s = Tensor::of_slice(&[s as i64]).to_device(self.device);
+            let s = Tensor::from_slice(&[s as i64]).to_device(self.device);
             let (out, state_) = self.encoder.forward(&s, &state);
             enc_outputs.push(out);
             state = state_;
@@ -155,7 +155,7 @@ impl Model {
         for _i in 0..MAX_LENGTH {
             let (output, state_) = self.decoder.forward(&prev, &state, &enc_outputs, true);
             let (_, output) = output.topk(1, -1, true, true);
-            let output_ = i64::from(&output) as usize;
+            let output_ = i64::try_from(&output).unwrap() as usize;
             output_seq.push(output_);
             if self.decoder_eos == output_ {
                 break;
@@ -208,7 +208,7 @@ pub fn main() -> Result<()> {
         let (input_, target) = pairs.choose(&mut rng).unwrap();
         let loss = model.train_loss(input_, target, &mut rng);
         opt.backward_step(&loss);
-        loss_stats.update(f64::from(loss) / target.len() as f64);
+        loss_stats.update(f64::try_from(loss)? / target.len() as f64);
         if idx % 1000 == 0 {
             println!("{} {}", idx, loss_stats.avg_and_reset());
             for _pred_index in 1..5 {

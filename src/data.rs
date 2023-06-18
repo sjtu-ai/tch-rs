@@ -131,7 +131,9 @@ pub struct TextDataIter {
 impl TextData {
     /// Creates a text dataset from a file.
     pub fn new<P: AsRef<std::path::Path>>(filename: P) -> Result<TextData, TchError> {
-        let mut buffer = std::fs::read(filename)?;
+        let mut buffer = std::fs::read(&filename).map_err(|err| {
+            std::io::Error::new(err.kind(), format!("{:?} {err}", filename.as_ref()))
+        })?;
 
         let mut label_for_char = HashMap::<u8, u8>::new();
         let mut char_for_label = Vec::<char>::new();
@@ -143,7 +145,7 @@ impl TextData {
             })
         }
 
-        Ok(TextData { data: Tensor::of_slice(&buffer), char_for_label, label_for_char })
+        Ok(TextData { data: Tensor::from_slice(&buffer), char_for_label, label_for_char })
     }
 
     /// Returns the number of different characters/labels used by the dataset.
@@ -192,7 +194,7 @@ impl Iterator for TextDataIter {
             None
         } else {
             self.batch_index += 1;
-            let indexes = Vec::<i64>::from(&self.indexes.i(start..start + size));
+            let indexes = Vec::<i64>::try_from(&self.indexes.i(start..start + size)).unwrap();
             let batch: Vec<_> = indexes.iter().map(|&i| self.data.i(i..i + self.seq_len)).collect();
             let batch: Vec<_> = batch.iter().collect();
             Some(Tensor::stack(&batch, 0))

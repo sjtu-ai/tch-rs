@@ -7,7 +7,8 @@ use std::borrow::Borrow;
 use std::convert::TryFrom;
 use torch_sys::*;
 
-/// Argument and output values for JIT models.
+/// Argument and output values for JIT models. These represent arbitrary values,
+/// e.g. tensors, atomic values, pairs of values, etc.
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
 pub enum IValue {
@@ -81,17 +82,17 @@ impl<T1: Into<IValue>, T2: Into<IValue>, T3: Into<IValue>, T4: Into<IValue>> Fro
 impl<T1, T2, T1E, T2E> TryFrom<IValue> for (T1, T2)
 where
     T1: TryFrom<IValue, Error = T1E>,
-    T1E: Into<TchError>,
+    TchError: From<T1E>,
     T2: TryFrom<IValue, Error = T2E>,
-    T2E: Into<TchError>,
+    TchError: From<T2E>,
 {
     type Error = TchError;
     fn try_from(value: IValue) -> Result<Self, TchError> {
         match value {
             IValue::GenericList(mut vec) | IValue::Tuple(mut vec) => {
                 if vec.len() == 2 {
-                    let t2 = T2::try_from(vec.swap_remove(1)).map_err(Into::into)?;
-                    let t1 = T1::try_from(vec.swap_remove(0)).map_err(Into::into)?;
+                    let t2 = T2::try_from(vec.pop().unwrap())?;
+                    let t1 = T1::try_from(vec.pop().unwrap())?;
                     Ok((t1, t2))
                 } else {
                     Err(TchError::Kind(format!(
@@ -111,20 +112,20 @@ where
 impl<T1, T2, T3, T1E, T2E, T3E> TryFrom<IValue> for (T1, T2, T3)
 where
     T1: TryFrom<IValue, Error = T1E>,
-    T1E: Into<TchError>,
+    TchError: From<T1E>,
     T2: TryFrom<IValue, Error = T2E>,
-    T2E: Into<TchError>,
+    TchError: From<T2E>,
     T3: TryFrom<IValue, Error = T3E>,
-    T3E: Into<TchError>,
+    TchError: From<T3E>,
 {
     type Error = TchError;
     fn try_from(value: IValue) -> Result<Self, TchError> {
         match value {
             IValue::GenericList(mut vec) | IValue::Tuple(mut vec) => {
                 if vec.len() == 3 {
-                    let t3 = T3::try_from(vec.swap_remove(2)).map_err(Into::into)?;
-                    let t2 = T2::try_from(vec.swap_remove(1)).map_err(Into::into)?;
-                    let t1 = T1::try_from(vec.swap_remove(0)).map_err(Into::into)?;
+                    let t3 = T3::try_from(vec.pop().unwrap())?;
+                    let t2 = T2::try_from(vec.pop().unwrap())?;
+                    let t1 = T1::try_from(vec.pop().unwrap())?;
                     Ok((t1, t2, t3))
                 } else {
                     Err(TchError::Kind(format!(
@@ -144,23 +145,23 @@ where
 impl<T1, T2, T3, T4, T1E, T2E, T3E, T4E> TryFrom<IValue> for (T1, T2, T3, T4)
 where
     T1: TryFrom<IValue, Error = T1E>,
-    T1E: Into<TchError>,
+    TchError: From<T1E>,
     T2: TryFrom<IValue, Error = T2E>,
-    T2E: Into<TchError>,
+    TchError: From<T2E>,
     T3: TryFrom<IValue, Error = T3E>,
-    T3E: Into<TchError>,
+    TchError: From<T3E>,
     T4: TryFrom<IValue, Error = T4E>,
-    T4E: Into<TchError>,
+    TchError: From<T4E>,
 {
     type Error = TchError;
     fn try_from(value: IValue) -> Result<Self, TchError> {
         match value {
             IValue::GenericList(mut vec) | IValue::Tuple(mut vec) => {
                 if vec.len() == 4 {
-                    let t4 = T4::try_from(vec.swap_remove(3)).map_err(Into::into)?;
-                    let t3 = T3::try_from(vec.swap_remove(2)).map_err(Into::into)?;
-                    let t2 = T2::try_from(vec.swap_remove(1)).map_err(Into::into)?;
-                    let t1 = T1::try_from(vec.swap_remove(0)).map_err(Into::into)?;
+                    let t4 = T4::try_from(vec.pop().unwrap())?;
+                    let t3 = T3::try_from(vec.pop().unwrap())?;
+                    let t2 = T2::try_from(vec.pop().unwrap())?;
+                    let t1 = T1::try_from(vec.pop().unwrap())?;
                     Ok((t1, t2, t3, t4))
                 } else {
                     Err(TchError::Kind(format!(
@@ -231,6 +232,7 @@ impl_from!(Vec<String>, StringList);
 impl_from!(Vec<crate::Tensor>, TensorList);
 impl_from!(Vec<IValue>, GenericList);
 impl_from!(Vec<(IValue, IValue)>, GenericDict);
+impl_from!(Object, Object);
 
 impl From<&str> for IValue {
     fn from(s: &str) -> Self {
@@ -306,7 +308,7 @@ impl IValue {
     }
 
     // This consumes the pointer and frees the associated memory (unless it is an Object).
-    pub(super) fn of_c(c_ivalue: *mut CIValue) -> Result<Self, TchError> {
+    pub(super) fn from_c(c_ivalue: *mut CIValue) -> Result<Self, TchError> {
         let mut free = true;
         let tag = unsafe_torch_err!(ati_tag(c_ivalue));
         let v = match tag {
@@ -330,7 +332,7 @@ impl IValue {
                     (0..len).map(|_| std::ptr::null_mut::<CIValue>()).collect();
                 unsafe_torch_err!(ati_to_tuple(c_ivalue, c_ivalues.as_mut_ptr(), len));
                 let vec: Result<Vec<_>, _> =
-                    c_ivalues.iter().map(|&c_ivalue| (Self::of_c(c_ivalue))).collect();
+                    c_ivalues.iter().map(|&c_ivalue| (Self::from_c(c_ivalue))).collect();
                 IValue::Tuple(vec?)
             }
             6 => {
@@ -374,7 +376,7 @@ impl IValue {
                     (0..len).map(|_| std::ptr::null_mut::<CIValue>()).collect();
                 unsafe_torch_err!(ati_to_generic_list(c_ivalue, c_ivalues.as_mut_ptr(), len));
                 let vec: Result<Vec<_>, _> =
-                    c_ivalues.iter().map(|&c_ivalue| (Self::of_c(c_ivalue))).collect();
+                    c_ivalues.iter().map(|&c_ivalue| (Self::from_c(c_ivalue))).collect();
                 IValue::GenericList(vec?)
             }
             13 => {
@@ -384,8 +386,8 @@ impl IValue {
                 unsafe_torch_err!(ati_to_generic_dict(c_ivalue, c_ivalues.as_mut_ptr(), len));
                 let mut res: Vec<(IValue, IValue)> = vec![];
                 for i in 0..(len as usize) {
-                    let key = Self::of_c(c_ivalues[2 * i])?;
-                    let value = Self::of_c(c_ivalues[2 * i + 1])?;
+                    let key = Self::from_c(c_ivalues[2 * i])?;
+                    let value = Self::from_c(c_ivalues[2 * i + 1])?;
                     res.push((key, value))
                 }
                 IValue::GenericDict(res)
@@ -468,7 +470,8 @@ impl CModule {
         Ok(CModule { c_module })
     }
 
-    /// Performs the forward pass for a model on some specified tensor inputs.
+    /// Performs the forward pass for a model on some specified tensor inputs. This is equivalent
+    /// to calling method_ts with the 'forward' method name, and returns a single tensor.
     pub fn forward_ts<T: Borrow<Tensor>>(&self, ts: &[T]) -> Result<Tensor, TchError> {
         let ts: Vec<_> = ts.iter().map(|x| x.borrow().c_tensor).collect();
         let c_tensor =
@@ -476,7 +479,8 @@ impl CModule {
         Ok(Tensor { c_tensor })
     }
 
-    /// Performs the forward pass for a model on some specified ivalue inputs.
+    /// Performs the forward pass for a model on some specified ivalue inputs. This is equivalent
+    /// to calling method_is with the 'forward' method name, and returns an arbitrary ivalue.
     pub fn forward_is<T: Borrow<IValue>>(&self, ts: &[T]) -> Result<IValue, TchError> {
         let ts = ts.iter().map(|x| x.borrow().to_c()).collect::<Result<Vec<_>, TchError>>()?;
         let c_ivalue =
@@ -484,7 +488,7 @@ impl CModule {
         for x in ts {
             unsafe { ati_free(x) }
         }
-        IValue::of_c(c_ivalue)
+        IValue::from_c(c_ivalue)
     }
 
     /// Runs a specified entry point for a model on some given tensor inputs.
@@ -521,7 +525,7 @@ impl CModule {
         for x in ts {
             unsafe { ati_free(x) }
         }
-        IValue::of_c(c_ivalue)
+        IValue::from_c(c_ivalue)
     }
 
     /// Create a specified custom JIT class object with the given class name, eg: `__torch__.foo.Bar`
@@ -541,7 +545,7 @@ impl CModule {
         for x in ts {
             unsafe { ati_free(x) }
         }
-        IValue::of_c(c_ivalue)
+        IValue::from_c(c_ivalue)
     }
 
     /// Switches the module to evaluation mode.
@@ -566,6 +570,7 @@ impl CModule {
         self.f_set_train().unwrap();
     }
 
+    /// Moves the module to a different device and converts the kind.
     pub fn to(&mut self, device: Device, kind: Kind, non_blocking: bool) {
         unsafe_torch!(atm_to(self.c_module, device.c_int(), kind.c_int(), non_blocking));
     }
@@ -708,21 +713,43 @@ impl TrainableCModule {
     }
 }
 
+/// Returns whether profiling mode is set or not.
 pub fn f_get_profiling_mode() -> Result<bool, TchError> {
     Ok(unsafe_torch_err!(atm_get_profiling_mode()) != 0)
 }
 
+/// Returns whether profiling mode is set or not.
 pub fn get_profiling_mode() -> bool {
     f_get_profiling_mode().unwrap()
 }
 
+/// Activates or deactivates the profiling mode.
 pub fn f_set_profiling_mode(b: bool) -> Result<(), TchError> {
     unsafe_torch_err!(atm_set_profiling_mode(b as c_int));
     Ok(())
 }
 
+/// Activates or deactivates the profiling mode.
 pub fn set_profiling_mode(b: bool) {
     f_set_profiling_mode(b).unwrap()
+}
+
+pub fn f_fuser_cuda_set_enabled(enabled: bool) -> Result<(), TchError> {
+    unsafe_torch_err!(atm_fuser_cuda_set_enabled(enabled));
+    Ok(())
+}
+
+pub fn fuser_cuda_set_enabled(enabled: bool) {
+    f_fuser_cuda_set_enabled(enabled).unwrap()
+}
+
+pub fn f_fuser_cuda_is_enabled() -> Result<bool, TchError> {
+    let b = unsafe_torch_err!(atm_fuser_cuda_is_enabled());
+    Ok(b)
+}
+
+pub fn fuser_cuda_is_enabled() -> bool {
+    f_fuser_cuda_is_enabled().unwrap()
 }
 
 pub fn f_set_tensor_expr_fuser_enabled(b: bool) -> Result<(), TchError> {
@@ -772,6 +799,8 @@ pub struct Object {
 }
 
 impl Object {
+    /// Applies the specified method to the object. The method takes as argument an arbitrary
+    /// number of ivalues and returns an ivalue.
     pub fn method_is<T: Borrow<IValue>>(
         &self,
         method_name: &str,
@@ -788,9 +817,10 @@ impl Object {
         for x in ts {
             unsafe { ati_free(x) }
         }
-        IValue::of_c(c_ivalue)
+        IValue::from_c(c_ivalue)
     }
 
+    /// Retrieves the specified attribute from an object as an ivalue.
     pub fn getattr(&self, attr_name: &str) -> Result<IValue, TchError> {
         let property_name = std::ffi::CString::new(attr_name)?;
         let c_ivalue =
@@ -800,7 +830,7 @@ impl Object {
                 "Object.getattr(\"{attr_name}\") returned CIValue nullptr"
             )));
         }
-        IValue::of_c(c_ivalue)
+        IValue::from_c(c_ivalue)
     }
 }
 
@@ -817,7 +847,7 @@ mod tests {
 
     fn round_trip<T: Into<IValue>>(t: T) {
         let ivalue: IValue = t.into();
-        let ivalue2 = IValue::of_c(ivalue.to_c().unwrap()).unwrap();
+        let ivalue2 = IValue::from_c(ivalue.to_c().unwrap()).unwrap();
         assert_eq!(ivalue, ivalue2);
     }
     #[test]

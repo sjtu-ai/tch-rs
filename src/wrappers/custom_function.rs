@@ -324,14 +324,14 @@ mod tests {
     use crate::{kind::FLOAT_CPU, no_grad, Device, Kind, Reduction, Tensor};
 
     #[test]
-    fn test_base() {
+    fn test_base() -> anyhow::Result<()> {
         // y = x^2 + sin x
         // y' = 2x + cos x
 
         // target = [2,1]^T
 
         let mut x = Tensor::arange(2 * 3, FLOAT_CPU).reshape(&[2, 3]).set_requires_grad(true);
-        let target = Tensor::of_slice(&[2., 1.])
+        let target = Tensor::from_slice(&[2., 1.])
             .to_kind(Kind::Float)
             .reshape(&[2, 1])
             .to_device(Device::Cpu);
@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(135.421142578125, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = x.grad().into();
+        let grad: Vec<f32> = x.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_grad);
 
         x.zero_grad();
@@ -365,12 +365,14 @@ mod tests {
 
         println!("y={:?}, require grad:{}", y, y.requires_grad());
         loss.backward();
-        let grad: Vec<f32> = x.grad().into();
+        let grad: Vec<f32> = x.grad().view(-1).try_into()?;
         grad.iter().zip(expect_grad.iter()).for_each(|(a, b)| assert_relative_eq!(a, b));
+
+        Ok(())
     }
 
     #[test]
-    fn test_base_2() {
+    fn test_base_2() -> anyhow::Result<()> {
         // y = x^2 + sin v
         // y' = 2x + cos v
 
@@ -378,7 +380,7 @@ mod tests {
 
         let mut x = Tensor::arange(2 * 3, FLOAT_CPU).reshape(&[2, 3]).set_requires_grad(true);
         let mut v = Tensor::arange(2 * 3, FLOAT_CPU).reshape(&[2, 3]).set_requires_grad(true);
-        let target = Tensor::of_slice(&[2., 1.])
+        let target = Tensor::from_slice(&[2., 1.])
             .to_kind(Kind::Float)
             .reshape(&[2, 1])
             .to_device(Device::Cpu);
@@ -391,10 +393,10 @@ mod tests {
         assert_eq!(135.421142578125, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = x.grad().into();
+        let grad: Vec<f32> = x.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_x_grad);
 
-        let grad: Vec<f32> = v.grad().into();
+        let grad: Vec<f32> = v.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_v_grad);
 
         x.zero_grad();
@@ -420,16 +422,18 @@ mod tests {
 
         println!("y={:?}, require grad:{}", y, y.requires_grad());
         loss.backward();
-        let grad: Vec<f32> = x.grad().into();
+        let grad: Vec<f32> = x.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_x_grad);
         grad.iter().zip(expect_x_grad.iter()).for_each(|(a, b)| assert_relative_eq!(a, b));
 
-        let grad: Vec<f32> = v.grad().into();
+        let grad: Vec<f32> = v.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_v_grad);
+
+        Ok(())
     }
 
     #[test]
-    fn test_base_3() {
+    fn test_base_3() -> anyhow::Result<()> {
         // x = a^2 + sin b
         // y = 2a + cos c
         // z = x*d + y
@@ -453,7 +457,7 @@ mod tests {
             vec![-0.032815367, -0.31268418, 5.562992, 17.498081, 10.547721, -45.445644];
         let expect_d_grad = vec![0.030367598, 4.2304926, 30.439932, 150.4187, 567.78906, 1709.9938];
 
-        let target = Tensor::of_slice(&[2., 1.])
+        let target = Tensor::from_slice(&[2., 1.])
             .to_kind(Kind::Float)
             .reshape(&[2, 1])
             .to_device(Device::Cpu);
@@ -466,14 +470,14 @@ mod tests {
         assert_eq!(9902.7109375, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
-        let grad: Vec<f32> = b.grad().into();
+        let grad: Vec<f32> = b.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_b_grad);
-        let grad: Vec<f32> = c.grad().into();
+        let grad: Vec<f32> = c.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_c_grad);
-        let grad: Vec<f32> = d.grad().into();
+        let grad: Vec<f32> = d.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_d_grad);
 
         a.zero_grad();
@@ -510,25 +514,27 @@ mod tests {
         assert_eq!(9902.7109375, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
-        let grad: Vec<f32> = b.grad().into();
+        let grad: Vec<f32> = b.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_b_grad);
-        let grad: Vec<f32> = c.grad().into();
+        let grad: Vec<f32> = c.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_c_grad);
-        let grad: Vec<f32> = d.grad().into();
+        let grad: Vec<f32> = d.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_d_grad);
+
+        Ok(())
     }
 
     #[test]
-    fn test_no_grad() {
+    fn test_no_grad() -> anyhow::Result<()> {
         // x = a * a
         let mut a = Tensor::arange(2 * 3, FLOAT_CPU).reshape(&[2, 3]).set_requires_grad(true);
         let expect_a_grad = vec![-0.0, -0.6666667, 2.6666667, 16.0, 40.0, 80.0];
         let expect_a_grad_custom = vec![0.0, -1.0, 4.0, 24.0, 60.0, 120.0];
 
-        let target = Tensor::of_slice(&[2., 1.])
+        let target = Tensor::from_slice(&[2., 1.])
             .to_kind(Kind::Float)
             .reshape(&[2, 1])
             .to_device(Device::Cpu);
@@ -538,7 +544,7 @@ mod tests {
         assert_eq!(145.6666717529297, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
         a.zero_grad();
@@ -547,7 +553,7 @@ mod tests {
         assert_eq!(145.6666717529297, loss.double_value(&[]));
 
         loss.backward();
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad_custom);
 
         a.zero_grad();
@@ -569,15 +575,17 @@ mod tests {
         let loss = x.mse_loss(&target, Reduction::Mean);
         assert_eq!(145.6666717529297, loss.double_value(&[]));
         assert_eq!(false, loss.requires_grad());
+
+        Ok(())
     }
 
     #[test]
-    fn test_backward_batch() {
+    fn test_backward_batch() -> anyhow::Result<()> {
         let mut hidden = Tensor::arange_start(1, 1 * 2 + 1, FLOAT_CPU).reshape(&[1, 2]);
         let _ = hidden.shallow_clone().requires_grad_(true);
         let mut a =
             Tensor::arange_start(2, 1 * 2 + 2, FLOAT_CPU).reshape(&[1, 2]).set_requires_grad(true);
-        let target = &Tensor::of_slice(&[3, 4]).to_kind(Kind::Float).reshape(&[1, 2]);
+        let target = &Tensor::from_slice(&[3, 4]).to_kind(Kind::Float).reshape(&[1, 2]);
 
         let expect_a_grad = vec![4.0, 168.0];
         let expect_hidden_grad = vec![4.0, 126.0];
@@ -590,10 +598,10 @@ mod tests {
         assert_eq!(expect_loss, loss.double_value(&[]));
         loss.backward();
 
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
-        let grad: Vec<f32> = hidden.grad().into();
+        let grad: Vec<f32> = hidden.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_hidden_grad);
 
         // backward grad manually
@@ -604,10 +612,10 @@ mod tests {
         let loss = no_grad(|| &x - target);
         x.backward_with_grad(&loss);
 
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
-        let grad: Vec<f32> = hidden.grad().into();
+        let grad: Vec<f32> = hidden.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_hidden_grad);
 
         // backward grad batch
@@ -618,10 +626,10 @@ mod tests {
         let grad_tensors = no_grad(|| &x - target);
         run_backward_batch::<_, _, &Tensor>(&[&x], &[&grad_tensors], &[], false, false);
 
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_a_grad);
 
-        let grad: Vec<f32> = hidden.grad().into();
+        let grad: Vec<f32> = hidden.grad().view(-1).try_into()?;
         assert_eq!(grad, expect_hidden_grad);
 
         // backward grad batch for multi tensors
@@ -633,10 +641,12 @@ mod tests {
 
         run_backward_batch::<_, _, &Tensor>(&[&x, &y], &[&grad_x, &grad_y], &[], false, false);
 
-        let grad: Vec<f32> = a.grad().into();
+        let grad: Vec<f32> = a.grad().view(-1).try_into()?;
         assert_eq!(grad, [12.0, 344.0]);
 
-        let grad: Vec<f32> = hidden.grad().into();
+        let grad: Vec<f32> = hidden.grad().view(-1).try_into()?;
         assert_eq!(grad, [10.0, 256.0]);
+
+        Ok(())
     }
 }

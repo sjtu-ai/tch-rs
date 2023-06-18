@@ -12,3 +12,9 @@ __pycache__
 .*~
 .vscode/
 test.ipynb
+
+*.ot
+*.safetensors
+*.so
+*.dylib
+llama-tokenizer.json

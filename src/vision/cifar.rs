@@ -1,7 +1,7 @@
 //! The CIFAR-10 dataset.
 //!
 //! The files can be downloaded from the following page:
-//! https://www.cs.toronto.edu/~kriz/cifar.html
+//! <https://www.cs.toronto.edu/~kriz/cifar.html>
 //! The binary version of the dataset is used.
 use super::dataset::Dataset;
 use crate::{kind, IndexOp, Kind, Tensor};
@@ -18,9 +18,9 @@ fn read_file_(filename: &std::path::Path) -> Result<(Tensor, Tensor)> {
     let mut buf_reader = BufReader::new(File::open(filename)?);
     let mut data = vec![0u8; (SAMPLES_PER_FILE * BYTES_PER_IMAGE) as usize];
     buf_reader.read_exact(&mut data)?;
-    let content = Tensor::of_slice(&data);
-    let images = Tensor::zeros(&[SAMPLES_PER_FILE, C, H, W], kind::FLOAT_CPU);
-    let labels = Tensor::zeros(&[SAMPLES_PER_FILE], kind::INT64_CPU);
+    let content = Tensor::from_slice(&data);
+    let images = Tensor::zeros([SAMPLES_PER_FILE, C, H, W], kind::FLOAT_CPU);
+    let labels = Tensor::zeros([SAMPLES_PER_FILE], kind::INT64_CPU);
     for index in 0..SAMPLES_PER_FILE {
         let content_offset = BYTES_PER_IMAGE * index;
         labels.i(index).copy_(&content.i(content_offset));

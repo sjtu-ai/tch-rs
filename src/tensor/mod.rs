@@ -109,7 +109,7 @@ impl Tensor {
                 self.size()
             )));
         }
-        self.f_constant_pad_nd(&[left, right])
+        self.f_constant_pad_nd([left, right])
     }
 
     pub fn zero_pad1d(&self, left: i64, right: i64) -> Tensor {
@@ -129,7 +129,7 @@ impl Tensor {
                 self.size()
             )));
         }
-        self.f_constant_pad_nd(&[left, right, top, bottom])
+        self.f_constant_pad_nd([left, right, top, bottom])
     }
 
     pub fn zero_pad2d(&self, left: i64, right: i64, top: i64, bottom: i64) -> Tensor {
@@ -169,13 +169,13 @@ impl Tensor {
 
 impl<T: crate::kind::Element> From<&[T]> for Tensor {
     fn from(v: &[T]) -> Tensor {
-        Tensor::of_slice(v)
+        Tensor::from_slice(v)
     }
 }
 
 impl<T: crate::kind::Element> From<T> for Tensor {
     fn from(v: T) -> Tensor {
-        Tensor::of_slice(&[v]).view(())
+        Tensor::from_slice(&[v]).view(())
     }
 }
 impl Tensor {
@@ -207,7 +207,7 @@ impl Tensor {
 
     pub fn random_batch(&self, batch_size: i64) -> Tensor {
         let len: i64 = self.size()[0];
-        let index = Tensor::randint(len, &[batch_size], (Kind::Int64, self.device()));
+        let index = Tensor::randint(len, [batch_size], (Kind::Int64, self.device()));
         self.index_select(0, &index)
     }
 
@@ -222,7 +222,7 @@ impl Tensor {
         if device1 != device2 {
             panic!("random_batch2: device mismatch {device1:?} {device2:?}")
         }
-        let index = Tensor::randint(len1, &[batch_size], (Kind::Int64, device1));
+        let index = Tensor::randint(len1, [batch_size], (Kind::Int64, device1));
         let batch1 = t1.index_select(0, &index);
         let batch2 = t2.index_select(0, &index);
         (batch1, batch2)
@@ -238,11 +238,11 @@ impl Tensor {
     }
 
     pub fn avg_pool2d_default(&self, ksize: i64) -> Tensor {
-        self.avg_pool2d(&[ksize, ksize], &[ksize, ksize], &[0, 0], false, true, 1)
+        self.avg_pool2d([ksize, ksize], [ksize, ksize], [0, 0], false, true, 1)
     }
 
     pub fn max_pool2d_default(&self, ksize: i64) -> Tensor {
-        self.max_pool2d(&[ksize, ksize], &[ksize, ksize], &[0, 0], &[1, 1], false)
+        self.max_pool2d([ksize, ksize], [ksize, ksize], [0, 0], [1, 1], false)
     }
 
     /// Flattens a tensor.
@@ -259,7 +259,7 @@ impl Tensor {
     /// [N1, ..., Nk, labels]. The returned tensor uses float values.
     /// Elements of the input vector are expected to be between 0 and labels-1.
     pub fn onehot(&self, labels: i64) -> Tensor {
-        Tensor::zeros(&[self.size(), vec![labels]].concat(), crate::wrappers::kind::FLOAT_CPU)
+        Tensor::zeros([self.size(), vec![labels]].concat(), (Kind::Float, self.device()))
             .scatter_value_(-1, &self.unsqueeze(-1).to_kind(Kind::Int64), 1.0)
     }
 
@@ -270,12 +270,13 @@ impl Tensor {
         result
     }
 
-    pub fn of_slice2<T, U>(v: &[U]) -> Tensor
+    /// Copies the data from a two dimensional slice in a tensor object.
+    pub fn from_slice2<T, U>(v: &[U]) -> Tensor
     where
         T: crate::kind::Element,
         U: AsRef<[T]>,
     {
-        let inner: Vec<Tensor> = v.iter().map(|v| Tensor::of_slice(v.as_ref())).collect();
+        let inner: Vec<Tensor> = v.iter().map(|v| Tensor::from_slice(v.as_ref())).collect();
         Tensor::stack(&inner, 0)
     }
 

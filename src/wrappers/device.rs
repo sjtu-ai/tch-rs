@@ -9,6 +9,8 @@ pub enum Device {
     Cuda(usize),
     /// The main MPS device.
     Mps,
+    /// The main Vulkan device.
+    Vulkan,
 }
 
 /// Cuda related helper functions.
@@ -90,13 +92,15 @@ impl Device {
             Device::Cpu => -1,
             Device::Cuda(device_index) => device_index as libc::c_int,
             Device::Mps => -2,
+            Device::Vulkan => -3,
         }
     }
 
-    pub(super) fn of_c_int(v: libc::c_int) -> Self {
+    pub(super) fn from_c_int(v: libc::c_int) -> Self {
         match v {
             -1 => Device::Cpu,
             -2 => Device::Mps,
+            -3 => Device::Vulkan,
             index if index >= 0 => Device::Cuda(index as usize),
             _ => panic!("unexpected device {v}"),
         }
@@ -114,8 +118,7 @@ impl Device {
     pub fn is_cuda(self) -> bool {
         match self {
             Device::Cuda(_) => true,
-            Device::Cpu => false,
-            Device::Mps => false,
+            Device::Cpu | Device::Mps | Device::Vulkan => false,
         }
     }
 }

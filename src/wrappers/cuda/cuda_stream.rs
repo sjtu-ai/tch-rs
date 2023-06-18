@@ -161,12 +161,12 @@ mod tests {
 
         let b = stream.with_stream((), |_| {
             let b = a.sum(Kind::Float);
-            assert_eq!(f32::from(&b), 100.0);
+            assert_eq!(f32::try_from(&b).unwrap(), 100.0);
             b
         });
 
         stream.synchronize();
-        assert_eq!(f32::from(&b), 100.0);
+        assert_eq!(f32::try_from(&b).unwrap(), 100.0);
     }
 
     #[test]
@@ -207,36 +207,15 @@ mod tests {
             let z = Tensor::eye(100, (Kind::Float, device));
             let aa = Tensor::eye(100, (Kind::Float, device));
 
-            a + b
-                + c
-                + d
-                + e
-                + f
-                + g
-                + h
-                + i
-                + j
-                + k
-                + l
-                + m
-                + n
-                + o
-                + p
-                + q
-                + r
-                + s
-                + t
-                + u
-                + v
-                + w
-                + x
-                + y
-                + z
-                + aa
+            #[rustfmt::skip]
+            a + b + c + d + e + f + g //.
+                + h + i + j + k + l + m + n // .
+                + o + p + q + r + s + t + u //.
+                + v + w + x + y + z + aa
         });
         stream1.wait_stream(&stream2);
         let sum = stream1.with_stream((), |_| sum.sum(Kind::Float));
         stream1.synchronize();
-        assert_eq!(f32::from(&sum), 2700.0);
+        assert_eq!(f32::try_from(&sum).unwrap(), 2700.0);
     }
 }

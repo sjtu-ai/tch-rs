@@ -195,7 +195,7 @@ impl Tensor {
     /// an error on undefined tensors and unsupported data types.
     pub fn f_kind(&self) -> Result<Kind, TchError> {
         let kind = unsafe_torch!(at_scalar_type(self.c_tensor));
-        Kind::of_c_int(kind)
+        Kind::from_c_int(kind)
     }
 
     /// Returns the kind of elements stored in the input tensor. Panics
@@ -207,7 +207,7 @@ impl Tensor {
     /// Returns the device on which the input tensor is located.
     pub fn device(&self) -> Device {
         let device = unsafe_torch!(at_device(self.c_tensor));
-        Device::of_c_int(device)
+        Device::from_c_int(device)
     }
 
     /// Prints the input tensor.
@@ -362,7 +362,8 @@ impl Tensor {
     ///     compute the attr::tensors.
     ///
     /// # note
-    ///     use this to custom function, pls see the test:
+    ///
+    /// use this to custom function, pls see the test:
     ///     [`tch::tests::tensor_tests::custom_functiom_part1()`]
     pub fn f_backward_with_grad_data<'a, T>(
         &self,
@@ -532,7 +533,7 @@ impl Tensor {
 
     // This is similar to vec_... but faster as it directly blits the data.
     /// Converts a slice to a tensor.
-    pub fn f_of_slice<T: kind::Element>(data: &[T]) -> Result<Tensor, TchError> {
+    pub fn f_from_slice<T: kind::Element>(data: &[T]) -> Result<Tensor, TchError> {
         let data_len = data.len();
         let data = data.as_ptr() as *const c_void;
         let c_tensor = unsafe_torch_err!(at_tensor_of_data(
@@ -546,12 +547,12 @@ impl Tensor {
     }
 
     /// Converts a slice to a tensor.
-    pub fn of_slice<T: kind::Element>(data: &[T]) -> Tensor {
-        Self::f_of_slice(data).unwrap()
+    pub fn from_slice<T: kind::Element>(data: &[T]) -> Tensor {
+        Self::f_from_slice(data).unwrap()
     }
 
     /// Converts some byte data to a tensor with some specified kind and shape.
-    pub fn f_of_data_size(data: &[u8], size: &[i64], kind: Kind) -> Result<Tensor, TchError> {
+    pub fn f_from_data_size(data: &[u8], size: &[i64], kind: Kind) -> Result<Tensor, TchError> {
         let data = data.as_ptr() as *const c_void;
         let elt_size_in_bytes = kind.elt_size_in_bytes();
         let c_tensor = unsafe_torch_err!(at_tensor_of_data(
@@ -565,10 +566,11 @@ impl Tensor {
     }
 
     /// Creates a tensor from data that is assumed to be initialized.
-    /// Resize operations are now allowed on this tensor without copying the data first.
+    /// Resize operations are not allowed on this tensor without copying the data first.
+    /// An empty strides slice will result in using the default strides.
     /// # Safety
-    ///   This will panic if `data` points to invalid data.
-    pub unsafe fn f_of_blob(
+    ///   Behavior is undefined if `data` points to invalid data.
+    pub unsafe fn f_from_blob(
         data: *const u8,
         size: &[i64],
         strides: &[i64],
@@ -590,22 +592,23 @@ impl Tensor {
     }
 
     /// Creates a tensor from data that is assumed to be initialized.
-    /// Resize operations are now allowed on this tensor without copying the data first.
+    /// Resize operations are not allowed on this tensor without copying the data first.
+    /// An empty strides slice will result in using the default strides.
     /// # Safety
-    ///   This will panic if `data` points to invalid data.
-    pub unsafe fn of_blob(
+    ///   Behavior is undefined if `data` points to invalid data.
+    pub unsafe fn from_blob(
         data: *const u8,
         size: &[i64],
         strides: &[i64],
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        Self::f_of_blob(data, size, strides, kind, device).unwrap()
+        Self::f_from_blob(data, size, strides, kind, device).unwrap()
     }
 
     /// Converts some byte data to a tensor with some specified kind and shape.
-    pub fn of_data_size(data: &[u8], size: &[i64], kind: Kind) -> Tensor {
-        Self::f_of_data_size(data, size, kind).unwrap()
+    pub fn from_data_size(data: &[u8], size: &[i64], kind: Kind) -> Tensor {
+        Self::f_from_data_size(data, size, kind).unwrap()
     }
 
     /// Returns a new tensor that share storage with the input tensor.
@@ -955,9 +958,9 @@ pub struct NoGradGuard {
 
 /// Disables gradient tracking, this will be enabled back when the
 /// returned value gets deallocated.
-/// Note that it is important to bind this to a name like "_guard"
-/// and not to "_" as these two would have different semantics.
-/// See https://internals.rust-lang.org/t/pre-rfc-must-bind/12658/46
+/// Note that it is important to bind this to a name like `_guard`
+/// and not to `_` as the latter would immediately drop the guard.
+/// See <https://internals.rust-lang.org/t/pre-rfc-must-bind/12658/46>
 /// for more details.
 pub fn no_grad_guard() -> NoGradGuard {
     NoGradGuard { enabled: grad_set_enabled(false) }

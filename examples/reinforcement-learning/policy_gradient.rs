@@ -48,7 +48,7 @@ pub fn run() -> cpython::PyResult<()> {
             let action = tch::no_grad(|| {
                 obs.unsqueeze(0).apply(&model).softmax(1, Float).multinomial(1, true)
             });
-            let action = i64::from(action);
+            let action = i64::try_from(action).unwrap();
             let step = env.step(action)?;
             steps.push(step.copy_with_obs(&obs));
             obs = if step.is_done { env.reset()? } else { step.obs };
@@ -68,18 +68,15 @@ pub fn run() -> cpython::PyResult<()> {
         // Train the model via policy gradient on the rollout data.
         let batch_size = steps.len() as i64;
         let actions: Vec<i64> = steps.iter().map(|s| s.action).collect();
-        let actions = Tensor::of_slice(&actions).unsqueeze(1);
+        let actions = Tensor::from_slice(&actions).unsqueeze(1);
         let rewards = accumulate_rewards(&steps);
-        let rewards = Tensor::of_slice(&rewards).to_kind(Float);
+        let rewards = Tensor::from_slice(&rewards).to_kind(Float);
         let action_mask =
-            Tensor::zeros(&[batch_size, 2], tch::kind::FLOAT_CPU).scatter_value(1, &actions, 1.0);
+            Tensor::zeros([batch_size, 2], tch::kind::FLOAT_CPU).scatter_value(1, &actions, 1.0);
         let obs: Vec<Tensor> = steps.into_iter().map(|s| s.obs).collect();
         let logits = Tensor::stack(&obs, 0).apply(&model);
-        let log_probs = (action_mask * logits.log_softmax(1, Float)).sum_dim_intlist(
-            Some([1].as_slice()),
-            false,
-            Float,
-        );
+        let log_probs =
+            (action_mask * logits.log_softmax(1, Float)).sum_dim_intlist(1, false, Float);
         let loss = -(rewards * log_probs).mean(Float);
         opt.backward_step(&loss)
     }

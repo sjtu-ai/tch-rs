@@ -129,7 +129,7 @@ fn rnn_weights<'a, T: Borrow<super::Path<'a>>>(
 
 /// A Long Short-Term Memory (LSTM) layer.
 ///
-/// https://en.wikipedia.org/wiki/Long_short-term_memory
+/// <https://en.wikipedia.org/wiki/Long_short-term_memory>
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
 pub struct LSTM {
@@ -174,7 +174,7 @@ impl RNN for LSTM {
         let num_directions = if self.config.bidirectional { 2 } else { 1 };
         let layer_dim = self.config.num_layers * num_directions;
         let shape = [layer_dim, batch_dim, self.hidden_dim];
-        let zeros = Tensor::zeros(&shape, (self.flat_weights[0].kind(), self.device));
+        let zeros = Tensor::zeros(shape, (self.flat_weights[0].kind(), self.device));
         LSTMState((zeros.shallow_clone(), zeros.shallow_clone()))
     }
 
@@ -214,7 +214,7 @@ impl GRUState {
 
 /// A Gated Recurrent Unit (GRU) layer.
 ///
-/// https://en.wikipedia.org/wiki/Gated_recurrent_unit
+/// <https://en.wikipedia.org/wiki/Gated_recurrent_unit>
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
 pub struct GRU {
@@ -259,7 +259,7 @@ impl RNN for GRU {
         let num_directions = if self.config.bidirectional { 2 } else { 1 };
         let layer_dim = self.config.num_layers * num_directions;
         let shape = [layer_dim, batch_dim, self.hidden_dim];
-        GRUState(Tensor::zeros(&shape, (self.flat_weights[0].kind(), self.device)))
+        GRUState(Tensor::zeros(shape, (self.flat_weights[0].kind(), self.device)))
     }
 
     fn step(&self, input: &Tensor, in_state: &GRUState) -> GRUState {

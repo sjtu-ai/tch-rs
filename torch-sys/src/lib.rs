@@ -4,8 +4,12 @@ pub mod cuda;
 pub mod cuda_stream_ffi;
 pub mod custom_function_ffi;
 pub mod io;
+#[cfg(feature = "python-extension")]
+pub mod python;
+mod traits;
 
-use libc::{c_char, c_int, c_long, c_uchar, c_void, size_t};
+use libc::{c_char, c_int, c_uchar, c_void, size_t};
+pub use traits::{DoubleList, IntList, IntListOption};
 
 #[repr(C)]
 pub struct C_scalar {
@@ -166,8 +170,8 @@ extern "C" {
     pub fn at_context_has_lazy() -> bool;
     pub fn at_context_has_mps() -> bool;
     pub fn at_context_has_ort() -> bool;
-    pub fn at_context_version_cudnn() -> c_long;
-    pub fn at_context_version_cudart() -> c_long;
+    pub fn at_context_version_cudnn() -> i64;
+    pub fn at_context_version_cudart() -> i64;
 }
 
 pub mod c_generated;
@@ -327,6 +331,8 @@ extern "C" {
     pub fn atm_save(m: *mut CModule_, filename: *const c_char);
     pub fn atm_get_profiling_mode() -> c_int;
     pub fn atm_set_profiling_mode(profiling_mode: c_int);
+    pub fn atm_fuser_cuda_set_enabled(enabled: bool);
+    pub fn atm_fuser_cuda_is_enabled() -> bool;
     pub fn atm_named_parameters(
         m: *mut CModule_,
         data: *mut c_void,

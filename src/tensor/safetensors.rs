@@ -1,16 +1,14 @@
 //! Safetensors support for tensors.
 //!
-//! Format spec:
-//! https://github.com/huggingface/safetensors
+//! This module implements reading and writing tensors in the `.safetensors` format.
+//! <https://github.com/huggingface/safetensors>
 use crate::nn::VarStore;
 use crate::{Kind, TchError, Tensor};
 
-use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::path::Path;
 
-use safetensors::tensor::{self, Dtype, SafeTensorError, SafeTensors, TensorView, View};
+use safetensors::tensor::{Dtype, SafeTensors, TensorView, View};
 
 impl TryFrom<Kind> for Dtype {
     type Error = TchError;
@@ -57,7 +55,7 @@ impl<'a> TryFrom<TensorView<'a>> for Tensor {
     fn try_from(view: TensorView<'a>) -> Result<Self, Self::Error> {
         let size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
         let kind: Kind = view.dtype().try_into()?;
-        Tensor::f_of_data_size(view.data(), &size, kind)
+        Tensor::f_from_data_size(view.data(), &size, kind)
     }
 }
 
@@ -93,7 +91,7 @@ impl<'a> View for SafeView<'a> {
         &self.shape
     }
 
-    fn data(&self) -> Cow<[u8]> {
+    fn data(&self) -> std::borrow::Cow<[u8]> {
         let mut data = vec![0; self.data_len()];
         let numel = self.tensor.numel();
         self.tensor.f_copy_data_u8(&mut data, numel).unwrap();
@@ -105,27 +103,16 @@ impl<'a> View for SafeView<'a> {
     }
 }
 
+fn wrap_err<P: AsRef<Path>>(path: P, err: safetensors::SafeTensorError) -> TchError {
+    TchError::SafeTensorError { path: path.as_ref().to_string_lossy().to_string(), err }
+}
+
 impl crate::Tensor {
     /// Reads a safetensors file and returns some named tensors.
     pub fn read_safetensors<T: AsRef<Path>>(path: T) -> Result<Vec<(String, Tensor)>, TchError> {
-        let file = std::fs::read(&path)?;
-
-        let safetensors = match SafeTensors::deserialize(&file) {
-            Ok(value) => value,
-            Err(e) => match e {
-                SafeTensorError::IoError(e) => Err(e)?,
-                // Always reoutput the error message from the underlying error for easier debugging
-                e => Err(TchError::FileFormat(format!("unable to load safetensor file : {e}")))?,
-            },
-        };
-
-        safetensors
-            .tensors()
-            .into_iter()
-            .map(|(name, view)| -> Result<(String, Tensor), TchError> {
-                Ok((name, view.try_into()?))
-            })
-            .collect()
+        let file = std::fs::read(&path).map_err(|e| wrap_err(&path, e.into()))?;
+        let safetensors = SafeTensors::deserialize(&file).map_err(|e| wrap_err(&path, e))?;
+        safetensors.tensors().into_iter().map(|(name, view)| Ok((name, view.try_into()?))).collect()
     }
 
     /// Writes a tensor in the safetensors format.
@@ -135,13 +122,12 @@ impl crate::Tensor {
     ) -> Result<(), TchError> {
         let views = tensors
             .iter()
-            .map(|(name, tensor)| -> Result<(&str, SafeView), TchError> {
-                Ok((name.as_ref(), tensor.as_ref().try_into()?))
+            .map(|(name, tensor)| {
+                Ok::<(&str, SafeView), TchError>((name.as_ref(), tensor.as_ref().try_into()?))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        tensor::serialize_to_file(views, &None, path.as_ref())
-            .map_err(|e| TchError::Convert(format!("Error while saving safetensor file {e}")))?;
-
+        safetensors::tensor::serialize_to_file(views, &None, path.as_ref())
+            .map_err(|e| wrap_err(path, e))?;
         Ok(())
     }
 }
@@ -149,25 +135,18 @@ impl crate::Tensor {
 impl VarStore {
     /// Read data from safe tensor file, missing tensors will raise a error.
     pub fn read_safetensors<T: AsRef<Path>>(&self, path: T) -> Result<(), TchError> {
-        let path = path.as_ref();
-        let data: BTreeMap<String, Tensor> = Tensor::read_safetensors(path)?.into_iter().collect();
-
+        let file = std::fs::read(&path).map_err(|e| wrap_err(&path, e.into()))?;
+        let safetensors = SafeTensors::deserialize(&file).map_err(|e| wrap_err(&path, e))?;
         for (name, tensor) in self.variables_.lock().unwrap().named_variables.iter_mut() {
-            match data.get(name) {
-                Some(s) => tensor.f_copy_(s)?,
-                None => Err(TchError::TensorNameNotFound(
-                    name.to_string(),
-                    path.to_string_lossy().to_string(),
-                ))?,
-            }
+            let view = safetensors.tensor(name).map_err(|e| wrap_err(&path, e))?;
+            let data: Tensor = view.try_into()?;
+            tensor.f_copy_(&data)?
         }
         Ok(())
     }
 
     pub fn fill_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), TchError> {
-        let data = Tensor::read_safetensors(path)?;
-
-        for (name, tensor) in data {
+        for (name, tensor) in Tensor::read_safetensors(path)? {
             if let Some(s) = self.variables_.lock().unwrap().named_variables.get_mut(&name) {
                 s.f_copy_(&tensor)?
             }
