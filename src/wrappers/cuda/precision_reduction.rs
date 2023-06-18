@@ -25,10 +25,16 @@ impl PrecisionReduction {
 
 #[cfg(test)]
 mod tests {
+    use crate::Cuda;
+
     use super::*;
     #[test]
-    #[ignore]
     fn test_precision_reduction() {
+        if !Cuda::is_available() {
+            println!("No CUDA device found, skipping test");
+            return;
+        }
+
         PrecisionReduction::set_bf16_reduced_precision(true);
         assert_eq!(PrecisionReduction::get_bf16_reduced_precision(), true);
         PrecisionReduction::set_fp16_reduced_precision(true);

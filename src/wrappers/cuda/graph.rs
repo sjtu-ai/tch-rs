@@ -75,11 +75,15 @@ impl CudaGrpah {
 #[cfg(test)]
 mod tests {
 
-    use crate::{CudaStream, Device, Kind, Tensor};
+    use crate::{Cuda, CudaStream, Device, Kind, Tensor};
 
     use super::*;
     #[test]
     fn test_cuda_graph() {
+        if !Cuda::is_available() {
+            println!("CUDA is not available, skipping test");
+            return;
+        }
         // Placeholder input used for capture
         let device = Device::Cuda(0);
         let mut static_input = Tensor::empty(&[5], (Kind::Float, device));

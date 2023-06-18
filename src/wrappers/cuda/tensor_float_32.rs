@@ -26,10 +26,16 @@ impl TensorFloat32 {
 
 #[cfg(test)]
 mod test_tensor_float_32 {
+    use crate::Cuda;
+
     use super::*;
     #[test]
-    #[ignore]
     fn test_tensor_float_32() {
+        if !Cuda::is_available() {
+            println!("No CUDA device found, skipping test");
+            return;
+        }
+
         TensorFloat32::cudnn_set_allow_tf32(true);
         assert_eq!(TensorFloat32::cudnn_get_allow_tf32(), true);
 

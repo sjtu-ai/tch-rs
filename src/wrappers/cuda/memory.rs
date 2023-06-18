@@ -21,13 +21,16 @@ pub fn empty_cuda_cache() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Kind, Tensor};
+    use crate::{Cuda, Kind, Tensor};
 
     use super::*;
 
     #[test]
-    #[ignore]
     fn test_get_device_memory_stats() {
+        if Cuda::device_count() == 0 {
+            println!("No CUDA device found, skipping test");
+            return;
+        }
         let device = Device::Cuda(2);
         let _v = Tensor::arange(10, (Kind::Float, device));
         let stats = get_device_memoty_stats(device);
@@ -35,8 +38,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_empty_cuda_cache() {
+        if Cuda::device_count() == 0 {
+            println!("No CUDA device found, skipping test");
+            return;
+        }
         empty_cuda_cache();
     }
 }

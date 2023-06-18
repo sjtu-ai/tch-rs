@@ -123,6 +123,6 @@ mod tests {
         end_event.synchronize();
 
         let elapsed_time = end_event.elapsed_time(&start_event);
-        println!("elapsed_time: {}", elapsed_time);
+        println!("elapsed_time: {:e}", elapsed_time);
     }
 }
